@@ -1,5 +1,5 @@
 # app.py — Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics
-# Light-only, clean separators and high-contrast colors (no yellow lines)
+# Light-only • single thin separator between sections • KPI inline style for shares
 
 import os, io
 import numpy as np
@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Light theme (CSS) — single mode
+# Light theme (CSS)
 # ──────────────────────────────────────────────────────────────────────────────
 LIGHT_CSS = """
 :root{
@@ -31,39 +31,47 @@ html, body, [class*="css"] { background:var(--bg)!important; color:var(--ink)!im
 a { color:var(--accent)!important; text-decoration:none; }
 .h1{font-weight:900;font-size:1.9rem;letter-spacing:.2px;color:#0b1220;margin:8px 0 6px 0;}
 .h1-sub{color:#3a4b6e;margin:0 0 14px 0;}
-.section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:0;}
+.section{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:0;
+  border-top:none;           /* ← evita la “doble línia” amb el separador fi */
+}
 .section-title{color:var(--ink);font-size:1.25rem;font-weight:900;margin:0 0 8px 0;}
-.section-def{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--deep);
-  border-radius:12px;padding:8px 10px;color:#1f2a44;margin-bottom:0;}
-.def-pill{font-size:.78rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3ff;color:#24408f;border:1px solid var(--line);}
-.sep{border:none;height:1px;background:var(--line);margin:12px 0;}  /* fi i uniforme entre seccions */
+.section-def{
+  display:block;border:1px solid var(--line);background:var(--deep);
+  border-radius:12px;padding:12px 14px;color:#1f2a44;margin-bottom:0;
+}
+.def-pill{font-size:.78rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3ff;color:#24408f;border:1px solid var(--line);margin-right:10px;}
+.sep{border:none;height:1px;background:var(--line);margin:12px 0;}  /* únic separador fi entre seccions */
+
 .kpi{background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;}
 .kpi .lbl{font-weight:800;color:#12203a;font-size:.9rem;}
 .kpi .val{font-weight:900;color:#0b1220;font-size:1.45rem;letter-spacing:.1px;margin-top:2px;}
 .kpi.a{border-left:5px solid var(--teal);} .kpi.b{border-left:5px solid var(--violet);}
 .kpi.c{border-left:5px solid var(--blue);} .kpi.d{border-left:5px solid var(--green);}
+
+/* KPI inline (un sol rengle, subtil) */
+.kpi-inline{background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;}
+.kpi-inline .txt{font-weight:700;color:#12203a;font-size:1rem;}
+.kpi-inline .txt .v{font-weight:800;color:#0b1220;}
 .insight{border:1px solid var(--line);background:#f2f6ff;color:#223355;border-radius:12px;padding:8px 10px;margin-top:10px;}
 """
 st.markdown(f"<style>{LIGHT_CSS}</style>", unsafe_allow_html=True)
 
 PLOTLY_TEMPLATE = "plotly_white"
-
 def apply_plotly_theme(fig: go.Figure) -> go.Figure:
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
         font=dict(color="#0b1220"),
         legend=dict(bgcolor="rgba(255,255,255,0)", orientation="h"),
         xaxis=dict(gridcolor="#e7eefc", zerolinecolor="#e7eefc", linecolor="#dbe5f6"),
         yaxis=dict(gridcolor="#e7eefc", zerolinecolor="#e7eefc", linecolor="#dbe5f6"),
-        margin=dict(l=10,r=10,t=30,b=10),
-        hovermode="x unified",
+        margin=dict(l=10,r=10,t=30,b=10), hovermode="x unified",
     )
     return fig
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Utilities
+# Utils
 # ──────────────────────────────────────────────────────────────────────────────
 DATA_DIR = "data"
 
@@ -98,17 +106,11 @@ def section(title:str, definition:str|None=None):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
     if definition:
-        st.markdown(
-            f'<div class="section-def"><span class="def-pill">Definition</span>'
-            f'<span>{definition}</span></div>',
-            unsafe_allow_html=True,
-        )
-    # IMPORTANT: NO <hr> here (elimina la línia fina abans dels KPIs/gràfics)
+        st.markdown(f'<div class="section-def">{definition}</div>', unsafe_allow_html=True)
 
 def end_section():
     st.markdown('</div>', unsafe_allow_html=True)
-    # separador FI entre seccions
-    st.markdown('<hr class="sep">', unsafe_allow_html=True)
+    st.markdown('<hr class="sep">', unsafe_allow_html=True)  # separador fi únic
 
 def kpi(col, label, value, style="a"):
     with col:
@@ -117,11 +119,15 @@ def kpi(col, label, value, style="a"):
             f'<div class="val">{value}</div></div>', unsafe_allow_html=True
         )
 
+def kpi_inline(col, text):
+    with col:
+        st.markdown(f'<div class="kpi-inline"><div class="txt">{text}</div></div>', unsafe_allow_html=True)
+
 def insight(text:str):
     st.markdown(f'<div class="insight"><strong>Insight.</strong> {text}</div>', unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Header + Executive Summary
+# Header + Executive Summary (TOT dins “Context”)
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="h1">Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</div>', unsafe_allow_html=True)
 st.markdown('<div class="h1-sub">Data as of most recent month available</div>', unsafe_allow_html=True)
@@ -133,20 +139,17 @@ st.markdown("""
     <span class="def-pill">Context</span>
     <span>
       This dashboard analyzes Ethereum’s on-chain capital flows and user dynamics across DeFi, bridges, and fees.
-      Metrics are sourced from canonical exports and designed for a crypto-savvy audience.
+      Metrics are sourced from canonical exports and designed for a crypto-savvy audience.<br><br>
+      <strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
+      Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees
+      that enabled higher throughput. Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices
+      in volatility, though long-run impact depends on fundamentals and recurring revenue.<br><br>
+      The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
+      Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
+      Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
+      and where liquidity is migrating across chains and venues.
     </span>
   </div>
-  <p><strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
-  Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees that enabled higher throughput.
-  Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices in volatility, though long-run impact depends on fundamentals and recurring revenue.</p>
-  <p>
-  The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
-  Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
-  </p>
-  <p>
-  Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
-  and where liquidity is migrating across chains and venues.
-  </p>
 </div>
 <hr class="sep">
 """, unsafe_allow_html=True)
@@ -154,8 +157,10 @@ st.markdown("""
 # ──────────────────────────────────────────────────────────────────────────────
 # 1) Monthly On-Chain USD Volume by Category
 # ──────────────────────────────────────────────────────────────────────────────
-section("1. Monthly On-Chain USD Volume by Category",
-        "Stacked on-chain volume (USD billions) by vertical; highlights peak throughput and category mix.")
+section(
+    "1. Monthly On-Chain USD Volume by Category",
+    "Stacked on-chain volume (USD billions) by vertical; highlights peak throughput and category mix."
+)
 
 df_vol = load_csv("volume_category.csv")
 if not df_vol.empty and all(c in df_vol.columns for c in ["MONTH","CATEGORY","VOLUME_USD_BILLIONS"]):
@@ -172,16 +177,15 @@ if not df_vol.empty and all(c in df_vol.columns for c in ["MONTH","CATEGORY","VO
         numer = sl[mask_dex]["VOLUME_USD_BILLIONS"].sum()
         dex_share = (numer/denom*100) if denom>0 else np.nan
 
-    c1,c2 = st.columns(2)
+    c1,c2 = st.columns([1,1])
     kpi(c1, "Peak Volume", f"${peak:,.2f}B" if pd.notna(peak) else "—", "a")
-    kpi(c2, "DEX Dominance (latest)", pct(dex_share,1), "b")
+    kpi_inline(c2, f"DEX Dominance (latest): <span class='v'>{pct(dex_share,1)}</span>")
 
-    # high-contrast palette on light bg
     fig = px.area(
         df_vol, x="MONTH", y="VOLUME_USD_BILLIONS", color="CATEGORY",
         labels={"VOLUME_USD_BILLIONS":"Volume (USD Billions)", "MONTH":"Month"},
         template=PLOTLY_TEMPLATE,
-        color_discrete_sequence=px.colors.qualitative.Set2  # better on light bg
+        color_discrete_sequence=px.colors.qualitative.Set2
     )
     apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
@@ -193,8 +197,10 @@ end_section()
 # ──────────────────────────────────────────────────────────────────────────────
 # 2) Monthly Active Addresses vs Transactions (Toggle)
 # ──────────────────────────────────────────────────────────────────────────────
-section("2. Monthly Active Addresses and Transactions by Category",
-        "Choose one metric at a time to isolate user base (addresses) vs network load (transactions).")
+section(
+    "2. Monthly Active Addresses and Transactions by Category",
+    "Choose one metric at a time to isolate user base (addresses) vs network load (transactions)."
+)
 
 df_act = load_csv("active_addresses.csv")
 if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","ACTIVE_ADDRESSES","TRANSACTIONS"]):
@@ -208,11 +214,11 @@ if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","AC
         sl = df_act[df_act["MONTH"]==latest]
         dex_share = (sl.loc[sl["CATEGORY"].str.contains("DEX",case=False), "ACTIVE_ADDRESSES"].sum()
                      / max(sl["ACTIVE_ADDRESSES"].sum(),1) * 100) if not sl.empty else np.nan
-        kpi(c2, "DEX Users (latest)", pct(dex_share,1), "d")
+        kpi_inline(c2, f"DEX Users (latest): <span class='v'>{pct(dex_share,1)}</span>")
 
         piv = df_act.pivot_table(index="MONTH", columns="CATEGORY", values="ACTIVE_ADDRESSES", aggfunc="sum")
         fig = go.Figure()
-        palette = ["#2563eb","#10b981","#7c3aed","#0ea5e9","#f97316","#22c55e","#1d4ed8"]  # no yellow line
+        palette = ["#2563eb","#10b981","#7c3aed","#0ea5e9","#f97316","#22c55e","#1d4ed8"]
         for i,col in enumerate(piv.columns):
             fig.add_trace(go.Scatter(x=piv.index, y=piv[col], name=col, line=dict(width=2, color=palette[i%len(palette)])))
         apply_plotly_theme(fig)
@@ -226,7 +232,7 @@ if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","AC
         sl = df_act[df_act["MONTH"]==latest]
         dex_share = (sl.loc[sl["CATEGORY"].str.contains("DEX",case=False), "TRANSACTIONS"].sum()
                      / max(sl["TRANSACTIONS"].sum(),1) * 100) if not sl.empty else np.nan
-        kpi(c2, "DEX TX Share (latest)", pct(dex_share,1), "d")
+        kpi_inline(c2, f"DEX TX Share (latest): <span class='v'>{pct(dex_share,1)}</span>")
 
         piv = df_act.pivot_table(index="MONTH", columns="CATEGORY", values="TRANSACTIONS", aggfunc="sum")
         fig = go.Figure()
@@ -245,8 +251,10 @@ end_section()
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) User Mix — Cohorts & Typology (merged)
 # ──────────────────────────────────────────────────────────────────────────────
-section("3. User Mix — Cohorts & Typology (Volume vs Activity)",
-        "Two synchronized views per month: (A) evolution of unique users, (B) 100% stacked shares. Toggle the dimension.")
+section(
+    "3. User Mix — Cohorts & Typology (Volume vs Activity)",
+    "Two synchronized views per month: (A) evolution of unique users, (B) 100% stacked shares. Toggle the dimension."
+)
 
 df_coh = load_csv("user_cohort.csv")
 df_typ = load_csv("user_typology.csv")
@@ -264,8 +272,7 @@ def _plot_evolution_and_share(df: pd.DataFrame, cat_col: str, count_col="UNIQUE_
                                   line=dict(width=2, color=palette[i%len(palette)])))
     apply_plotly_theme(figA)
     figA.update_layout(title=title_a, xaxis_title="Month", yaxis_title="Unique Users")
-    if use_log:
-        figA.update_yaxes(type="log", dtick=1)
+    if use_log: figA.update_yaxes(type="log", dtick=1)
     st.plotly_chart(figA, use_container_width=True)
 
     share = piv.apply(lambda r: (r / r.sum())*100 if r.sum()>0 else r, axis=1)
@@ -288,8 +295,8 @@ if dim == "Volume Cohorts" and not df_coh.empty and all(c in df_coh.columns for 
                      max(sl.loc[whale_mask,"UNIQUE_USERS"].sum(),1)) if whale_mask.any() else np.nan
 
     c1,c2 = st.columns(2)
-    kpi(c1, "Whale User Share (latest)", pct(whale_share,1), "a")
-    kpi(c2, "Whale Avg Volume (latest)", money(whale_avg_vol,2), "b")
+    kpi_inline(c1, f"Whale User Share (latest): <span class='v'>{pct(whale_share,1)}</span>")
+    kpi_inline(c2, f"Whale Avg Volume (latest): <span class='v'>{money(whale_avg_vol,2)}</span>")
 
     _plot_evolution_and_share(df_coh, "COHORT",
                               title_a="Unique Users by Cohort",
@@ -314,10 +321,10 @@ elif dim == "Activity/Sector" and not df_typ.empty and all(c in df_typ.columns f
         engagement_mult = np.nan
 
     c1,c2 = st.columns(2)
-    kpi(c1, "Multi-Sector User Share (latest)", pct(multi_share,1), "c")
-    kpi(c2, "Engagement Multiplier (Multi/Single)", f"{engagement_mult:.2f}×" if pd.notna(engagement_mult) else "—", "d")
+    kpi_inline(c1, f"Multi-Sector User Share (latest): <span class='v'>{pct(multi_share,1)}</span>")
+    kpi_inline(c2, f"Engagement Multiplier (Multi/Single): <span class='v'>{engagement_mult:.2f}×</span>")
 
-    soft_palette = ["#0ea5e9","#7c3aed","#10b981","#2563eb","#22c55e","#1d4ed8","#f97316"]  # cap groc
+    soft_palette = ["#0ea5e9","#7c3aed","#10b981","#2563eb","#22c55e","#1d4ed8","#f97316"]
     _plot_evolution_and_share(
         df_typ, "CATEGORY",
         title_a="Unique Users by Activity/Sector & Level (log scale)",
@@ -341,7 +348,7 @@ if not df_dex.empty and all(c in df_dex.columns for c in ["MONTH","ACTIVE_SWAPPE
     c1,c2 = st.columns(2)
     kpi(c1, "Peak DEX Volume", f"${series_vol.max():,.2f}B", "a")
     growth = (series_vol.iloc[-1]/max(series_vol.iloc[0],1)-1)*100 if series_vol.size>1 else np.nan
-    kpi(c2, "Volume Growth (since start)", pct(growth,1), "b")
+    kpi_inline(c2, f"Volume Growth (since start): <span class='v'>{pct(growth,1)}</span>")
 
     fig = go.Figure()
     fig.add_trace(go.Bar(x=df_dex["MONTH"], y=df_dex["TOTAL_VOLUME_BILLIONS"], name="DEX Volume (B)", marker_color="#2563eb"))
@@ -375,8 +382,8 @@ if not df_len.empty and all(c in df_len.columns for c in ["MONTH","PLATFORM","VO
     dep_growth = (dep_series.iloc[-1]/max(dep_series.iloc[0],1)-1)*100 if dep_series.size>1 else np.nan
 
     c1,c2 = st.columns(2)
-    kpi(c1, "Top Platform Share (latest)", pct(top_share,1), "c")
-    kpi(c2, "Depositors Growth (since start)", pct(dep_growth,1), "d")
+    kpi_inline(c1, f"Top Platform Share (latest): <span class='v'>{pct(top_share,1)}</span>")
+    kpi_inline(c2, f"Depositors Growth (since start): <span class='v'>{pct(dep_growth,1)}</span>")
 
     fig = px.area(df_len, x="MONTH", y="VOLUME_BILLIONS", color="PLATFORM",
                   labels={"VOLUME_BILLIONS":"Deposit Volume (B)"},
@@ -402,8 +409,8 @@ if not df_bridge.empty and "TOTAL_BRIDGE_VOLUME_BILLIONS" in df_bridge.columns:
     status = "Emerging Cross-Chain Hub" if (pd.notna(growth) and growth>50) else "Stable / Mixed"
 
     c1,c2 = st.columns(2)
-    kpi(c1, "Bridge Volume Growth", pct(growth,1), "a")
-    kpi(c2, "Status", status, "b")
+    kpi_inline(c1, f"Bridge Volume Growth: <span class='v'>{pct(growth,1)}</span>")
+    kpi_inline(c2, f"Status: <span class='v'>{status}</span>")
 
     fig = px.line(df_bridge, x="MONTH", y="TOTAL_BRIDGE_VOLUME_BILLIONS",
                   labels={"TOTAL_BRIDGE_VOLUME_BILLIONS":"Total Bridge Volume (B)"},
@@ -411,7 +418,7 @@ if not df_bridge.empty and "TOTAL_BRIDGE_VOLUME_BILLIONS" in df_bridge.columns:
     fig.update_traces(line=dict(width=3, color="#2563eb"))
     apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
-    insight("Bridge activity trends upward, signalling stronger cross-chain liquidity mobility. Further work can decompose flows by origin/destination.")
+    insight("Bridge activity trends upward; deeper breakdown by source/destination would clarify liquidity migration patterns.")
 else:
     st.info("`data/bridged_volume.csv` missing required columns.")
 end_section()
@@ -428,8 +435,8 @@ if not df_price.empty and all(c in df_price.columns for c in ["MONTH","AVG_ETH_P
     corr_pa = df_price[["AVG_ETH_PRICE_USD","ACTIVITY_INDEX"]].dropna().corr().iloc[0,1]
 
     c1,c2 = st.columns(2)
-    kpi(c1, "Price Range", f"{money(pr.min(),0)} – {money(pr.max(),0)}", "a")
-    kpi(c2, "Corr(Price, Activity)", f"{corr_pa:.2f}", "b")
+    kpi_inline(c1, f"Price Range: <span class='v'>{money(pr.min(),0)} – {money(pr.max(),0)}</span>")
+    kpi_inline(c2, f"Corr(Price, Activity): <span class='v'>{corr_pa:.2f}</span>")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_price["MONTH"], y=pr, name="ETH Price (USD)", line=dict(width=3, color="#2563eb")))
@@ -439,7 +446,7 @@ if not df_price.empty and all(c in df_price.columns for c in ["MONTH","AVG_ETH_P
                       yaxis2=dict(title="Activity Index", overlaying="y", side="right"))
     apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
-    insight("A positive correlation suggests activity often follows price impulses (or vice-versa), though causality varies over regimes.")
+    insight("Activity often follows price impulses (and sometimes leads); regime shifts can flip the relationship.")
 else:
     st.info("`data/eth_price.csv` missing required columns.")
 end_section()
@@ -472,8 +479,8 @@ if not df_fee_act.empty and "MONTH" in df_fee_act.columns:
         fd = (fee_usd.dropna().iloc[-1]/first_fee-1)*100 if pd.notna(first_fee) else np.nan
 
         c1,c2 = st.columns(2)
-        kpi(c1, "User Growth (since start)", pct(ug,1), "a")
-        kpi(c2, "Fee Change (since start)", pct(fd,1), "b")
+        kpi_inline(c1, f"User Growth (since start): <span class='v'>{pct(ug,1)}</span>")
+        kpi_inline(c2, f"Fee Change (since start): <span class='v'>{pct(fd,1)}</span>")
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df_fee_act["MONTH"], y=users, name="Unique Users",
@@ -501,6 +508,6 @@ end_section()
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(
     '<div style="text-align:center;opacity:.85;margin-top:6px;">'
-    'Built by Adrià Parcerisas • Data via Flipside/Dune-style exports • Streamlit + Plotly'
+    'Built by Adrià Parcerisas • Data via Flipside/Dune exports • Streamlit + Plotly'
     '</div>', unsafe_allow_html=True
 )
