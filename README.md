@@ -27,7 +27,7 @@ The analysis highlights where capital is accumulating (DEXs, lending, bridges), 
 
 ---
 
-## Core Visuals (8)
+## Core Visuals
 
 1. **Monthly On-Chain USD Volume by Category** — stacked volumes (billions) across major verticals; highlights peak throughput and category mix.  
 2. **Active Addresses & Transactions by Category** — dual-axis view of user base and activity load.  
@@ -38,7 +38,7 @@ The analysis highlights where capital is accumulating (DEXs, lending, bridges), 
 7. **Total Bridge Volume** — cross-chain connectivity and liquidity migration.  
 8. **ETH Price Overlay with Total Activity** — co-movement between price and a composite activity index.
 
-**Optional analytical add-ons (hide if needed for ≤8):**
+**ANNEX:**
 - **User Adoption During Fee Evolution** — unique users vs. average fee (USD).  
 - **Price vs. Fee Correlation** — scatter with OLS trendline.
 
@@ -70,14 +70,6 @@ streamlit run app.py
 
 ---
 
-## What reviewers should look for
-
-* **Metric definition fidelity** (e.g., category volumes, cohort composition, platform shares).
-* **Code correctness** (explicit column names, defensive parsing, rolling calculations kept transparent).
-* **Interpretability** (KPI badges + succinct definitions/insights per visualization).
-* **Judgment** (why these eight visuals best capture traction, sustainability, and user dynamics).
-
----
 
 ## Troubleshooting (already handled)
 
