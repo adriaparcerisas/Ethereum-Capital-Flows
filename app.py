@@ -31,17 +31,29 @@ html, body, [class*="css"] { background:var(--bg)!important; color:var(--ink)!im
 a { color:var(--accent)!important; text-decoration:none; }
 .h1{font-weight:900;font-size:1.9rem;letter-spacing:.2px;color:#0b1220;margin:8px 0 6px 0;}
 .h1-sub{color:#3a4b6e;margin:0 0 14px 0;}
+
+/* Targeta de secció amb vora completa (el “Executive Summary” tornarà a veure’s bé) */
 .section{
-  background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:0;
-  border-top:none;           /* ← evita la “doble línia” amb el separador fi */
+  background:var(--card);
+  border:1px solid var(--line);      /* vora a tots els costats */
+  border-radius:14px;
+  padding:14px;
+  margin-bottom:0;
 }
+
+/* Quan ve una targeta després del separador fi, li traiem només la vora superior
+   per evitar la doble línia (el separador ja fa de línia superior). */
+.sep + .section { border-top:none !important; }
+
 .section-title{color:var(--ink);font-size:1.25rem;font-weight:900;margin:0 0 8px 0;}
 .section-def{
   display:block;border:1px solid var(--line);background:var(--deep);
   border-radius:12px;padding:12px 14px;color:#1f2a44;margin-bottom:0;
 }
 .def-pill{font-size:.78rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3ff;color:#24408f;border:1px solid var(--line);margin-right:10px;}
-.sep{border:none;height:1px;background:var(--line);margin:12px 0;}  /* únic separador fi entre seccions */
+
+/* ÚNIC separador fi entre seccions */
+.sep{border:none;height:1px;background:var(--line);margin:12px 0;}
 
 .kpi{background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;}
 .kpi .lbl{font-weight:800;color:#12203a;font-size:.9rem;}
@@ -49,12 +61,20 @@ a { color:var(--accent)!important; text-decoration:none; }
 .kpi.a{border-left:5px solid var(--teal);} .kpi.b{border-left:5px solid var(--violet);}
 .kpi.c{border-left:5px solid var(--blue);} .kpi.d{border-left:5px solid var(--green);}
 
-/* KPI inline (un sol rengle, subtil) */
-.kpi-inline{background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;}
+/* KPI inline AMB franja de color (com els KPI grans) */
+.kpi-inline{
+  background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;
+}
 .kpi-inline .txt{font-weight:700;color:#12203a;font-size:1rem;}
 .kpi-inline .txt .v{font-weight:800;color:#0b1220;}
+.kpi-inline.a{border-left:5px solid var(--teal);}
+.kpi-inline.b{border-left:5px solid var(--violet);}
+.kpi-inline.c{border-left:5px solid var(--blue);}
+.kpi-inline.d{border-left:5px solid var(--green);}
+
 .insight{border:1px solid var(--line);background:#f2f6ff;color:#223355;border-radius:12px;padding:8px 10px;margin-top:10px;}
 """
+
 st.markdown(f"<style>{LIGHT_CSS}</style>", unsafe_allow_html=True)
 
 PLOTLY_TEMPLATE = "plotly_white"
@@ -119,9 +139,12 @@ def kpi(col, label, value, style="a"):
             f'<div class="val">{value}</div></div>', unsafe_allow_html=True
         )
 
-def kpi_inline(col, text):
+def kpi_inline(col, text, style="a"):
     with col:
-        st.markdown(f'<div class="kpi-inline"><div class="txt">{text}</div></div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="kpi-inline {style}"><div class="txt">{text}</div></div>',
+            unsafe_allow_html=True
+        )
 
 def insight(text:str):
     st.markdown(f'<div class="insight"><strong>Insight.</strong> {text}</div>', unsafe_allow_html=True)
@@ -511,3 +534,4 @@ st.markdown(
     'Built by Adrià Parcerisas • Data via Flipside/Dune exports • Streamlit + Plotly'
     '</div>', unsafe_allow_html=True
 )
+
