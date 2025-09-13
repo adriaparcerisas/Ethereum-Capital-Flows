@@ -1,5 +1,4 @@
-# app.py
-# Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics
+# app.py — Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics
 # (c) Adrià Parcerisas
 
 import os, io
@@ -15,76 +14,109 @@ import plotly.graph_objects as go
 st.set_page_config(
     page_title="Ethereum On-Chain Traction — Capital Flows & User Dynamics",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# High-contrast dark theme + components
+# Theme switcher (Dark default)
 # ──────────────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-:root{
-  --bg:#0b1020; --card:#101a33; --deep:#0a132a;
-  --ink:#f3f6fc; --muted:#c9d4e5; --line:#243a63;
-  --accent:#66efe0; --cyan:#22d3ee; --amber:#f59e0b;
-  --green:#22c55e; --violet:#a78bfa; --blue:#60a5fa;
-}
+if "theme" not in st.session_state:
+    st.session_state.theme = "Dark"
 
-/* base */
-html, body, [class*="css"] { background:var(--bg)!important; color:var(--ink)!important; }
-a { color:var(--accent)!important; text-decoration:none; }
+with st.sidebar:
+    st.markdown("### Appearance")
+    st.session_state.theme = st.radio("Theme", ["Dark","Light"], index=0 if st.session_state.theme=="Dark" else 1, horizontal=True)
+    st.caption("Charts and UI follow this selection.")
 
-/* H1 banner */
-.h1 {
-  font-weight: 900; font-size: 1.9rem; letter-spacing:.2px;
-  color:#cfe6ff; margin: 8px 0 6px 0;
-}
-.h1-sub { color:#9fb0c7; margin:0 0 14px 0; }
+THEME = st.session_state.theme
 
-/* containers */
-.section { background:var(--card); border:1px solid var(--line);
-  border-radius:14px; padding:14px 14px 12px 14px; margin-bottom:14px; }
-.section-title { color:var(--ink); font-size:1.25rem; font-weight:900; margin:0 0 8px 0; }
-.section-def { display:flex; gap:10px; align-items:flex-start;
-  border:1px solid var(--line); background:var(--deep);
-  border-radius:12px; padding:8px 10px; color: var(--muted); margin-bottom:8px; }
-.def-pill { font-size:.78rem; font-weight:800; padding:2px 8px; border-radius:999px;
-  background:#0f172a; color:#b4c4ff; border:1px solid var(--line);}
-.rule { height:1px; background:var(--line); margin:8px 0; } /* tighter divider */
+def inject_theme_css(theme: str):
+    if theme == "Dark":
+        css = """
+        :root{
+          --bg:#0b1020; --card:#101a33; --deep:#0a132a;
+          --ink:#f3f6fc; --muted:#c9d4e5; --line:#243a63;
+          --accent:#66efe0; --cyan:#22d3ee; --amber:#f59e0b;
+          --green:#22c55e; --violet:#a78bfa; --blue:#60a5fa;
+        }
+        html, body, [class*="css"] { background:var(--bg)!important; color:var(--ink)!important; }
+        a { color:var(--accent)!important; text-decoration:none; }
+        .h1{font-weight:900;font-size:1.9rem;letter-spacing:.2px;color:#cfe6ff;margin:8px 0 6px 0;}
+        .h1-sub{color:#9fb0c7;margin:0 0 14px 0;}
+        .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;}
+        .section-title{color:var(--ink);font-size:1.25rem;font-weight:900;margin:0 0 8px 0;}
+        .section-def{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--deep);
+          border-radius:12px;padding:8px 10px;color:var(--muted);margin-bottom:8px;}
+        .def-pill{font-size:.78rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#0f172a;color:#b4c4ff;border:1px solid var(--line);}
+        .sep{border:none;height:1px;background:var(--line);margin:10px 0;}
+        .kpi{background:#0e1a33;border:1px solid var(--line);border-radius:12px;padding:10px 12px;}
+        .kpi .lbl{font-weight:800;color:#dde7f5;font-size:.9rem;}
+        .kpi .val{font-weight:900;color:#ffffff;font-size:1.45rem;letter-spacing:.1px;margin-top:2px;}
+        .kpi.a{border-left:5px solid var(--cyan);} .kpi.b{border-left:5px solid var(--amber);}
+        .kpi.c{border-left:5px solid var(--green);} .kpi.d{border-left:5px solid var(--violet);}
+        .insight{border:1px solid var(--line);background:#0d152b;color:var(--muted);border-radius:12px;padding:8px 10px;}
+        """
+    else:
+        css = """
+        :root{
+          --bg:#f6f8fe; --card:#ffffff; --deep:#f8fbff;
+          --ink:#0b1220; --muted:#2d3a55; --line:#dbe5f6;
+          --accent:#2563eb; --cyan:#0891b2; --amber:#b45309;
+          --green:#15803d; --violet:#6d28d9; --blue:#1d4ed8;
+        }
+        html, body, [class*="css"] { background:var(--bg)!important; color:var(--ink)!important; }
+        a { color:var(--accent)!important; text-decoration:none; }
+        .h1{font-weight:900;font-size:1.9rem;letter-spacing:.2px;color:#0b1220;margin:8px 0 6px 0;}
+        .h1-sub{color:#3a4b6e;margin:0 0 14px 0;}
+        .section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;}
+        .section-title{color:var(--ink);font-size:1.25rem;font-weight:900;margin:0 0 8px 0;}
+        .section-def{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--deep);
+          border-radius:12px;padding:8px 10px;color:#1f2a44;margin-bottom:8px;}
+        .def-pill{font-size:.78rem;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3ff;color:#24408f;border:1px solid var(--line);}
+        .sep{border:none;height:1px;background:var(--line);margin:10px 0;}
+        .kpi{background:#f5f8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;}
+        .kpi .lbl{font-weight:800;color:#12203a;font-size:.9rem;}
+        .kpi .val{font-weight:900;color:#0b1220;font-size:1.45rem;letter-spacing:.1px;margin-top:2px;}
+        .kpi.a{border-left:5px solid var(--cyan);} .kpi.b{border-left:5px solid var(--amber);}
+        .kpi.c{border-left:5px solid var(--green);} .kpi.d{border-left:5px solid var(--violet);}
+        .insight{border:1px solid var(--line);background:#f2f6ff;color:#223355;border-radius:12px;padding:8px 10px;}
+        """
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-/* KPI cards */
-.kpi { background:#0e1a33; border:1px solid var(--line); border-radius:12px;
-  padding:10px 12px; }
-.kpi .lbl { font-weight:800; color:#dde7f5; font-size:.9rem; }
-.kpi .val { font-weight:900; color:#ffffff; font-size:1.45rem; letter-spacing:.1px; margin-top:2px; }
-.kpi.a { border-left:5px solid var(--cyan); }
-.kpi.b { border-left:5px solid var(--amber); }
-.kpi.c { border-left:5px solid var(--green); }
-.kpi.d { border-left:5px solid var(--violet); }
+inject_theme_css(THEME)
 
-/* insight card */
-.insight { border:1px solid var(--line); background:#0d152b; color:var(--muted);
-  border-radius:12px; padding:8px 10px; }
-</style>
-""", unsafe_allow_html=True)
+# Plotly template based on theme
+PLOTLY_TEMPLATE = "plotly_dark" if THEME=="Dark" else "plotly_white"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Plotly dark layout helper (applied to every fig)
-# ──────────────────────────────────────────────────────────────────────────────
-def apply_dark(fig: go.Figure) -> go.Figure:
-    fig.update_layout(
-        paper_bgcolor="#0b1020", plot_bgcolor="#0b1020",
-        font=dict(color="#e5e7eb"),
-        legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h"),
-        xaxis=dict(gridcolor="#223354", zerolinecolor="#223354", linecolor="#223354"),
-        yaxis=dict(gridcolor="#223354", zerolinecolor="#223354", linecolor="#223354"),
-        margin=dict(l=10,r=10,t=30,b=10),
-        hovermode="x unified"
-    )
+def apply_plotly_theme(fig: go.Figure) -> go.Figure:
+    if THEME == "Dark":
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE,
+            paper_bgcolor="#0b1020",
+            plot_bgcolor="#0b1020",
+            font=dict(color="#e5e7eb"),
+            legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h"),
+            xaxis=dict(gridcolor="#223354", zerolinecolor="#223354", linecolor="#223354"),
+            yaxis=dict(gridcolor="#223354", zerolinecolor="#223354", linecolor="#223354"),
+            margin=dict(l=10,r=10,t=30,b=10),
+            hovermode="x unified",
+        )
+    else:
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            font=dict(color="#0b1220"),
+            legend=dict(bgcolor="rgba(255,255,255,0)", orientation="h"),
+            xaxis=dict(gridcolor="#e7eefc", zerolinecolor="#e7eefc", linecolor="#dbe5f6"),
+            yaxis=dict(gridcolor="#e7eefc", zerolinecolor="#e7eefc", linecolor="#dbe5f6"),
+            margin=dict(l=10,r=10,t=30,b=10),
+            hovermode="x unified",
+        )
     return fig
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Utilities
 # ──────────────────────────────────────────────────────────────────────────────
 DATA_DIR = "data"
 
@@ -124,7 +156,7 @@ def section(title:str, definition:str|None=None):
             f'<span>{definition}</span></div>',
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
+        st.markdown('<hr class="sep">', unsafe_allow_html=True)  # tiny separator
 
 def end_section(): st.markdown('</div>', unsafe_allow_html=True)
 
@@ -154,19 +186,16 @@ st.markdown("""
       Metrics are sourced from canonical exports and designed for a crypto-savvy audience.
     </span>
   </div>
-  <p style="color:#e5ecfa">
-    <strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
-    Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees that
-    enabled higher throughput. Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices in volatility,
-    though long-run impact depends on fundamentals and recurring revenue.
+  <p><strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
+  Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees that enabled higher throughput.
+  Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices in volatility, though long-run impact depends on fundamentals and recurring revenue.</p>
+  <p>
+  The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
+  Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
   </p>
-  <p style="color:#e5ecfa">
-    The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
-    Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
-  </p>
-  <p style="color:#e5ecfa">
-    Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
-    and where liquidity is migrating across chains and venues.
+  <p>
+  Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
+  and where liquidity is migrating across chains and venues.
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -197,8 +226,10 @@ if not df_vol.empty and all(c in df_vol.columns for c in ["MONTH","CATEGORY","VO
     kpi(c2, "DEX Dominance (latest)", pct(dex_share,1), "b")
 
     fig = px.area(df_vol, x="MONTH", y="VOLUME_USD_BILLIONS", color="CATEGORY",
-                  labels={"VOLUME_USD_BILLIONS":"Volume (USD Billions)", "MONTH":"Month"})
-    apply_dark(fig)
+                  labels={"VOLUME_USD_BILLIONS":"Volume (USD Billions)", "MONTH":"Month"},
+                  template=PLOTLY_TEMPLATE,
+                  color_discrete_sequence=px.colors.qualitative.Set3)
+    apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
     insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 else:
@@ -230,7 +261,7 @@ if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","AC
         palette = px.colors.qualitative.Set3
         for i,col in enumerate(piv.columns):
             fig.add_trace(go.Scatter(x=piv.index, y=piv[col], name=col, line=dict(width=2, color=palette[i%len(palette)])))
-        apply_dark(fig)
+        apply_plotly_theme(fig)
         fig.update_layout(xaxis_title="Month", yaxis_title="Active Addresses")
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -249,7 +280,7 @@ if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","AC
         for i,col in enumerate(piv.columns):
             fig.add_trace(go.Scatter(x=piv.index, y=piv[col], name=col,
                                      line=dict(width=2, dash="dot", color=palette[i%len(palette)])))
-        apply_dark(fig)
+        apply_plotly_theme(fig)
         fig.update_layout(xaxis_title="Month", yaxis_title="Transactions")
         st.plotly_chart(fig, use_container_width=True)
     insight("Addresses reflect breadth; transactions reflect intensity. Use the toggle to attribute changes to usage vs throughput.")
@@ -277,19 +308,20 @@ def _plot_evolution_and_share(df: pd.DataFrame, cat_col: str, count_col="UNIQUE_
     for i,col in enumerate(cols):
         figA.add_trace(go.Scatter(x=piv.index, y=piv[col], name=col,
                                   line=dict(width=2, color=palette[i%len(palette)])))
-    apply_dark(figA)
+    apply_plotly_theme(figA)
     figA.update_layout(title=title_a, xaxis_title="Month", yaxis_title="Unique Users")
     if use_log:
-        figA.update_yaxes(type="log", dtick=1)  # log10 ticks
+        figA.update_yaxes(type="log", dtick=1)
     st.plotly_chart(figA, use_container_width=True)
 
     share = piv.apply(lambda r: (r / r.sum())*100 if r.sum()>0 else r, axis=1)
     melted = share.reset_index().melt("MONTH", var_name=cat_col, value_name="share")
     figB = px.bar(melted, x="MONTH", y="share", color=cat_col,
                   labels={"share":"% of Users"}, title=title_b,
+                  template=PLOTLY_TEMPLATE,
                   color_discrete_sequence=palette)
     figB.update_layout(barmode="stack")
-    apply_dark(figB)
+    apply_plotly_theme(figB)
     st.plotly_chart(figB, use_container_width=True)
 
 if dim == "Volume Cohorts" and not df_coh.empty and all(c in df_coh.columns for c in ["MONTH","COHORT","UNIQUE_USERS","TOTAL_VOLUME"]):
@@ -331,14 +363,12 @@ elif dim == "Activity/Sector" and not df_typ.empty and all(c in df_typ.columns f
     kpi(c1, "Multi-Sector User Share (latest)", pct(multi_share,1), "c")
     kpi(c2, "Engagement Multiplier (Multi/Single)", f"{engagement_mult:.2f}×" if pd.notna(engagement_mult) else "—", "d")
 
-    # Softer palette (avoid harsh red); log scale ON for evolution
     soft_palette = ["#7dd3fc","#a78bfa","#34d399","#eab308","#22d3ee","#f472b6","#93c5fd","#86efac"]
     _plot_evolution_and_share(
         df_typ, "CATEGORY",
         title_a="Unique Users by Activity/Sector & Level (log scale)",
         title_b="Activity/Sector & Level — Share (100%)",
-        use_log=True,
-        colors=soft_palette
+        use_log=True, colors=soft_palette
     )
     insight("Log scale exposes secondary segments when one cohort dominates. Palette toned down so the largest group does not overwhelm.")
 else:
@@ -363,11 +393,9 @@ if not df_dex.empty and all(c in df_dex.columns for c in ["MONTH","ACTIVE_SWAPPE
     fig.add_trace(go.Bar(x=df_dex["MONTH"], y=df_dex["TOTAL_VOLUME_BILLIONS"], name="DEX Volume (B)", marker_color="#60a5fa"))
     fig.add_trace(go.Scatter(x=df_dex["MONTH"], y=df_dex["ACTIVE_SWAPPERS"], name="Active Swappers",
                              mode="lines", line=dict(width=2, color="#2dd4bf"), yaxis="y2"))
-    fig.update_layout(
-        yaxis=dict(title="Volume (B)"),
-        yaxis2=dict(title="Active Swappers", overlaying="y", side="right"),
-    )
-    apply_dark(fig)
+    fig.update_layout(yaxis=dict(title="Volume (B)"),
+                      yaxis2=dict(title="Active Swappers", overlaying="y", side="right"))
+    apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
     insight("Swapper count tracks risk appetite; divergence vs volume may indicate market-maker dominated flow.")
 else:
@@ -398,8 +426,9 @@ if not df_len.empty and all(c in df_len.columns for c in ["MONTH","PLATFORM","VO
 
     fig = px.area(df_len, x="MONTH", y="VOLUME_BILLIONS", color="PLATFORM",
                   labels={"VOLUME_BILLIONS":"Deposit Volume (B)"},
+                  template=PLOTLY_TEMPLATE,
                   color_discrete_sequence=px.colors.qualitative.Set3)
-    apply_dark(fig)
+    apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
     insight(f"Lending depth is recently concentrated in <strong>{top_platform}</strong>. Tracking share rotation helps assess risk migration.")
 else:
@@ -424,9 +453,9 @@ if not df_bridge.empty and "TOTAL_BRIDGE_VOLUME_BILLIONS" in df_bridge.columns:
 
     fig = px.line(df_bridge, x="MONTH", y="TOTAL_BRIDGE_VOLUME_BILLIONS",
                   labels={"TOTAL_BRIDGE_VOLUME_BILLIONS":"Total Bridge Volume (B)"},
-                  markers=False)
+                  markers=False, template=PLOTLY_TEMPLATE)
     fig.update_traces(line=dict(width=3, color="#93c5fd"))
-    apply_dark(fig)
+    apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
     insight("Bridge activity trends upward, signalling stronger cross-chain liquidity mobility. Further work can decompose flows by origin/destination.")
 else:
@@ -452,11 +481,9 @@ if not df_price.empty and all(c in df_price.columns for c in ["MONTH","AVG_ETH_P
     fig.add_trace(go.Scatter(x=df_price["MONTH"], y=pr, name="ETH Price (USD)", line=dict(width=3, color="#60a5fa")))
     fig.add_trace(go.Scatter(x=df_price["MONTH"], y=act, name="Activity Index", yaxis="y2",
                              line=dict(width=2, dash="dot", color="#22c55e")))
-    fig.update_layout(
-        yaxis=dict(title="ETH Price (USD)"),
-        yaxis2=dict(title="Activity Index", overlaying="y", side="right"),
-    )
-    apply_dark(fig)
+    fig.update_layout(yaxis=dict(title="ETH Price (USD)"),
+                      yaxis2=dict(title="Activity Index", overlaying="y", side="right"))
+    apply_plotly_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
     insight("A positive correlation suggests activity often follows price impulses (or vice-versa), though causality varies over regimes.")
 else:
@@ -496,17 +523,17 @@ if not df_fee_act.empty and "MONTH" in df_fee_act.columns:
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df_fee_act["MONTH"], y=users, name="Unique Users",
-                                 line=dict(color="#a78bfa", width=3), mode="lines+markers",
-                                 marker=dict(symbol="circle-open")))
+                                 line=dict(width=3), mode="lines+markers",
+                                 marker=dict(symbol="circle-open"),
+                                 line_color="#a78bfa" if THEME=="Dark" else "#6d28d9"))
         fig.add_trace(go.Scatter(x=df_fee_act["MONTH"], y=fee_usd, name="Average Fee (USD)",
-                                 yaxis="y2", line=dict(color="#f59e0b", width=3), mode="lines+markers",
-                                 marker=dict(symbol="diamond")))
-        fig.update_layout(
-            xaxis_title="Month",
-            yaxis=dict(title="Unique Users"),
-            yaxis2=dict(title="Average Fee (USD)", overlaying="y", side="right"),
-        )
-        apply_dark(fig)
+                                 yaxis="y2", line=dict(width=3), mode="lines+markers",
+                                 marker=dict(symbol="diamond"),
+                                 line_color="#f59e0b" if THEME=="Dark" else "#b45309"))
+        fig.update_layout(xaxis_title="Month",
+                          yaxis=dict(title="Unique Users"),
+                          yaxis2=dict(title="Average Fee (USD)", overlaying="y", side="right"))
+        apply_plotly_theme(fig)
         st.plotly_chart(fig, use_container_width=True)
         insight("Fee softening tends to unlock new cohorts; fee spikes dampen marginal adoption, especially for retail flows.")
     else:
@@ -519,7 +546,7 @@ end_section()
 # Footer
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div style="text-align:center;color:#9fb0c7;opacity:.9;margin-top:6px;">'
+    '<div style="text-align:center;opacity:.85;margin-top:6px;">'
     'Built by Adrià Parcerisas • Data via Flipside/Dune-style exports • Streamlit + Plotly'
     '</div>', unsafe_allow_html=True
 )
