@@ -133,7 +133,7 @@ st.markdown("""
 # Load data
 # -----------------------------------------------------------
 df_volcat   = read_csv("volume_category.csv")      # MONTH, CATEGORY, VOLUME_USD, VOLUME_USD_BILLIONS
-df_active   = read_csv("active_addresses.csv")     # MONTH, CATEGORY, ACTIVE_ADDRESSES, TRANSACTIONS
+#df_active   = read_csv("active_addresses.csv")     # MONTH, CATEGORY, ACTIVE_ADDRESSES, TRANSACTIONS
 df_cohort   = read_csv("user_cohort.csv")          # MONTH, COHORT, UNIQUE_USERS, TOTAL_VOLUME, AVG_VOLUME_PER_USER
 df_typology = read_csv("user_typology.csv")        # MONTH, USER_TYPE, ACTIVITY_LEVEL, UNIQUE_USERS, AVG_VOLUME_PER_USER, AVG_TRANSACTIONS_PER_USER
 df_dex      = read_csv("dex_volume.csv")           # MONTH, ACTIVE_SWAPPERS, TOTAL_VOLUME_USD, TOTAL_VOLUME_BILLIONS, AVG_SWAP_SIZE, TOTAL_SWAPS
@@ -141,7 +141,50 @@ df_bridge   = read_csv("bridged_volume.csv")       # MONTH, INFLOW_BILLIONS, OUT
 df_eth      = read_csv("eth_price.csv")            # MONTH, AVG_ETH_PRICE_USD, TOTAL_TRANSACTIONS, UNIQUE_USERS, TOTAL_VOLUME_BILLIONS, ACTIVITY_INDEX
 df_lend     = read_csv("lending_deposits.csv")     # MONTH, PLATFORM, UNIQUE_DEPOSITORS, TOTAL_DEPOSIT_VOLUME, VOLUME_BILLIONS, AVG_DEPOSIT_SIZE, MONTHLY_TOTAL_BILLIONS, PLATFORM_MARKET_SHARE
 df_fees     = read_csv("fees_activity.csv")        # MONTH, AVG_FEE_USD, FEE_CATEGORY, TOTAL_TRANSACTIONS, UNIQUE_USERS, TRANSACTIONS_MILLIONS, USERS_MILLIONS, ...
+def load_active_activity(path="data/active_addresses.csv"):
+    """
+    Reads MONTH;SECTOR;AVG_DAILY_ACTIVE_ADDRESSES;TRANSACTIONS
+    Accepts ';' or ',' (auto-detect). Parses MONTH (YYYY-MM), trims SECTOR, and
+    coerces numeric columns.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        head = f.read(4096)
+    default_sep = ";" if head.count(";") > head.count(",") else ","
 
+    df = pd.read_csv(
+        path,
+        sep=default_sep if default_sep in [";", ","] else None,
+        engine="python"
+    )
+
+    # Normalize columns
+    df.columns = [c.strip() for c in df.columns]
+    rename_map = {
+        "Month": "MONTH",
+        "Sector": "SECTOR",
+        "Avg_Daily_Active_Addresses": "AVG_DAILY_ACTIVE_ADDRESSES",
+        "Transactions": "TRANSACTIONS",
+    }
+    df.rename(columns=rename_map, inplace=True)
+
+    expected = {"MONTH", "SECTOR", "AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"}
+    missing = expected - set(df.columns)
+    if missing:
+        st.warning(f"[active_addresses.csv] Missing columns: {', '.join(sorted(missing))}")
+        return pd.DataFrame(columns=list(expected))
+
+    df["MONTH"] = pd.to_datetime(df["MONTH"], format="%Y-%m", errors="coerce")
+    df["SECTOR"] = df["SECTOR"].astype(str).str.strip()
+
+    for c in ["AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    df = df.dropna(subset=["MONTH", "SECTOR"])
+    df = df.sort_values(["MONTH", "SECTOR"], kind="stable").reset_index(drop=True)
+    return df
+
+# Call the loader
+df_active = load_active_activity("data/active_addresses.csv")
 # -----------------------------------------------------------
 # 1) Monthly On-Chain USD Volume by Category  (Stacked Area)
 # -----------------------------------------------------------
@@ -489,6 +532,7 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
