@@ -101,33 +101,30 @@ KPI_STYLE = {
 # -----------------------------------------------------------
 # Title + Executive Summary (whole text inside "context" box)
 # -----------------------------------------------------------
-st.markdown(
-    "<h1>Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</h1>",
-    unsafe_allow_html=True
-)
-st.caption("Data as of most recent month available")
+st.markdown('<div class="h1">Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</div>', unsafe_allow_html=True)
+st.markdown('<div class="h1-sub">Data as of most recent month available</div>', unsafe_allow_html=True)
 
-with st.container():
-    st.markdown('<div class="hero">', unsafe_allow_html=True)
-    st.markdown("<h3>Executive Summary: Assessing Ethereum’s Traction</h3>", unsafe_allow_html=True)
-    st.markdown('<div class="context">', unsafe_allow_html=True)
-    st.write(
-        "This dashboard analyzes Ethereum’s on-chain capital flows and user dynamics across DeFi, bridges, and fees. "
-        "Metrics are sourced from canonical exports and designed for a crypto-savvy audience."
-    )
-    st.write(
-        "August set a new all-time high for on-chain volume (~$341B), eclipsing the 2021 peak. Tailwinds included "
-        "corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees that enabled higher throughput. "
-        "Protocol buybacks (~$46M late August; Hyperliquid ~$25M) supported prices in volatility, though long-run impact depends "
-        "on fundamentals and recurring revenue."
-    )
-    st.write(
-        "The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows. "
-        "Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges). "
-        "Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption, and "
-        "where liquidity is migrating across chains and venues."
-    )
-    st.markdown('</div></div>', unsafe_allow_html=True)
+st.markdown("""
+<div class="section">
+  <div class="section-title">Executive Summary: Assessing Ethereum’s Traction</div>
+  <div class="section-def">
+    <span class="def-pill">Context</span>
+    <span>
+      This dashboard analyzes Ethereum’s on-chain capital flows and user dynamics across DeFi, bridges, and fees.
+      Metrics are sourced from canonical exports and designed for a crypto-savvy audience.<br><br>
+      <strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
+      Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees
+      that enabled higher throughput. Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices
+      in volatility, though long-run impact depends on fundamentals and recurring revenue.<br><br>
+      The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
+      Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
+      Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
+      and where liquidity is migrating across chains and venues.
+    </span>
+  </div>
+</div>
+<hr class="sep">
+""", unsafe_allow_html=True)
 
 # -----------------------------------------------------------
 # Load data
@@ -450,3 +447,4 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
