@@ -1,4 +1,12 @@
-streamlit==1.37.1
-pandas>=2.0
+# General
+python-dateutil>=2.8.2
+pytz>=2024.1
+
+# Core
+streamlit>=1.34
+pandas>=2.2
+numpy>=1.26
 plotly>=5.22
-numpy>=1.24
+
+# For Plotly trendline="ols"
+statsmodels>=0.14
