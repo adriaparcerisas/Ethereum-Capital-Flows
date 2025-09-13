@@ -584,6 +584,12 @@ if not df_fees.empty:
 # (keep your existing "User Adoption During Fee Evolution" chart above)
 # ======================================================================
 
+import os
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+
 # ---------- helpers ----------
 def month_start(dt_series: pd.Series) -> pd.Series:
     """Coerce to tz-naive month-start timestamps safely (no 'MS' freq)."""
@@ -853,6 +859,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
