@@ -25,34 +25,35 @@ st.markdown("""
 <style>
 /* palette */
 :root{
-  --bg:#0c1220; --card:#0f172a; --deep:#0a0f1c;
-  --ink:#f5f7fb; --muted:#cbd5e1; --line:#2a3755;
-  --accent:#5eead4; --cyan:#22d3ee; --amber:#f59e0b;
+  --bg:#0b1020; --card:#101a33; --deep:#0a132a;
+  --ink:#f3f6fc; --muted:#c9d4e5; --line:#243a63;
+  --accent:#66efe0; --cyan:#22d3ee; --amber:#f59e0b;
   --green:#22c55e; --red:#ef4444; --violet:#a78bfa; --blue:#60a5fa;
 }
 
 /* base */
 html, body, [class*="css"] {
   background: var(--bg) !important; color: var(--ink) !important;
+  font-variant-ligatures: none;
 }
 a { color: var(--accent) !important; text-decoration: none; }
 
 /* containers */
 .section { background: var(--card); border:1px solid var(--line);
   border-radius:14px; padding:18px 18px 16px 18px; margin-bottom:18px; }
-.section-title { font-size: 1.35rem; font-weight:800; letter-spacing:.2px; margin:0 0 8px 0; }
-.section-def { display:flex; gap:8px; align-items:flex-start;
+.section-title { color:var(--ink); font-size: 1.4rem; font-weight:900; letter-spacing:.2px; margin:0 0 10px 0; }
+.section-def { display:flex; gap:10px; align-items:flex-start;
   border:1px solid var(--line); background: var(--deep);
-  border-radius:12px; padding:8px 10px; color: var(--muted); }
-.def-pill { font-size:.75rem; font-weight:700; padding:2px 8px; border-radius:999px;
-  background: #111827; color:#a5b4fc; border:1px solid var(--line);}
+  border-radius:12px; padding:10px 12px; color: var(--muted); margin-bottom:10px; }
+.def-pill { font-size:.8rem; font-weight:800; padding:3px 10px; border-radius:999px;
+  background: #0f172a; color:#b4c4ff; border:1px solid var(--line);}
 .rule { height:1px; background:var(--line); margin:12px 0; }
 
 /* KPI cards */
 .kpi { background: #0e1a33; border:1px solid var(--line); border-radius:12px;
-  padding:10px 12px; }
-.kpi .lbl { font-weight:700; color:#cbd5e1; font-size:.9rem; }
-.kpi .val { font-weight:900; color:#ffffff; font-size:1.5rem; letter-spacing:.1px; }
+  padding:12px 14px; }
+.kpi .lbl { font-weight:800; color:#dde7f5; font-size:.92rem; }
+.kpi .val { font-weight:900; color:#ffffff; font-size:1.55rem; letter-spacing:.1px; margin-top:4px; }
 .kpi.a { border-left:6px solid var(--cyan); }
 .kpi.b { border-left:6px solid var(--amber); }
 .kpi.c { border-left:6px solid var(--green); }
@@ -127,27 +128,31 @@ def insight(text:str):
     st.markdown(f'<div class="insight"><strong>Insight.</strong> {text}</div>', unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Executive summary (3 paragraphs; bold/italic via HTML to avoid markdown quirks)
+# Executive summary (Context applies to full section)
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="section">
   <div class="section-title">Executive Summary: Assessing Ethereum’s Traction</div>
-  <div class="section-def" style="margin-bottom:12px;">
+  <div class="section-def">
     <span class="def-pill">Context</span>
     <span>
       This dashboard analyzes Ethereum’s on-chain capital flows and user dynamics across DeFi, bridges, and fees.
       Metrics are sourced from canonical exports and designed for a crypto-savvy audience.
     </span>
   </div>
-  <p style="color:#dbe2ef">
+  <p style="color:#e5ecfa">
     <strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
     Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees that
     enabled higher throughput. Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices in volatility,
     though long-run impact depends on fundamentals and recurring revenue.
   </p>
-  <p style="color:#dbe2ef">
+  <p style="color:#e5ecfa">
     The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
     Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
+  </p>
+  <p style="color:#e5ecfa">
+    Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
+    and where liquidity is migrating across chains and venues.
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -163,9 +168,8 @@ if not df_vol.empty and all(c in df_vol.columns for c in ["MONTH","CATEGORY","VO
     df_vol["CATEGORY"] = df_vol["CATEGORY"].astype(str)
     total_by_month = df_vol.groupby("MONTH")["VOLUME_USD_BILLIONS"].sum()
     peak = total_by_month.max()
-    latest = total_by_month.idxmax() if not total_by_month.empty else None
 
-    # DEX dominance (best effort)
+    # DEX dominance (best effort) at latest month
     mask_dex = df_vol["CATEGORY"].str.contains("DEX", case=False, na=False)
     dex_share = np.nan
     if mask_dex.any():
@@ -183,7 +187,7 @@ if not df_vol.empty and all(c in df_vol.columns for c in ["MONTH","CATEGORY","VO
                   labels={"VOLUME_USD_BILLIONS":"Volume (USD Billions)", "MONTH":"Month"})
     fig.update_layout(hovermode="x unified", legend=dict(orientation="h"))
     st.plotly_chart(fig, use_container_width=True)
-    insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs. defensive phases.")
+    insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 else:
     st.info("`data/volume_category.csv` missing required columns.")
 end_section()
@@ -202,7 +206,6 @@ if not df_act.empty and all(c in df_act.columns for c in ["MONTH","CATEGORY","AC
         series = df_act.groupby("MONTH")["ACTIVE_ADDRESSES"].sum()
         c1,c2 = st.columns(2)
         kpi(c1, "Peak Users (Monthly)", f"{int(series.max()):,}" if series.size else "—", "c")
-        # DEX users share latest
         latest = df_act["MONTH"].max()
         sl = df_act[df_act["MONTH"]==latest]
         dex_share = (sl.loc[sl["CATEGORY"].str.contains("DEX",case=False), "ACTIVE_ADDRESSES"].sum()
@@ -245,7 +248,7 @@ section("3. User Mix — Cohorts & Typology (Volume vs Activity)",
         "Two synchronized views per month: (A) evolution of unique users, (B) 100% stacked shares. Toggle the dimension.")
 
 df_coh = load_csv("user_cohort.csv")       # COHORT (e.g., Whale/Large/Small…)
-df_typ = load_csv("user_typology.csv")     # USER_TYPE + ACTIVITY_LEVEL (e.g., Multi-sector / Single, Casual / Power)
+df_typ = load_csv("user_typology.csv")     # USER_TYPE + ACTIVITY_LEVEL (Multi-sector/Single × Casual/Power)
 
 dim = st.radio("Dimension", ["Volume Cohorts", "Activity/Sector"], horizontal=True, index=0, key="mix_dim")
 
@@ -286,8 +289,12 @@ if dim == "Volume Cohorts" and not df_coh.empty and all(c in df_coh.columns for 
                               title_b="Cohort Share (100%)")
     insight("Cohorts reveal who drives participation. Whale concentration can lift dollar volumes while masking retail breadth.")
 elif dim == "Activity/Sector" and not df_typ.empty and all(c in df_typ.columns for c in ["MONTH","USER_TYPE","ACTIVITY_LEVEL","UNIQUE_USERS","AVG_TRANSACTIONS_PER_USER"]):
+    # combine USER_TYPE + ACTIVITY_LEVEL into one category label, e.g., "Multi-sector • Power"
+    df_typ = df_typ.copy()
     df_typ["USER_TYPE"] = df_typ["USER_TYPE"].astype(str)
-    # KPIs (latest)
+    df_typ["ACTIVITY_LEVEL"] = df_typ["ACTIVITY_LEVEL"].astype(str)
+    df_typ["CATEGORY"] = df_typ["USER_TYPE"].str.strip() + " • " + df_typ["ACTIVITY_LEVEL"].str.strip()
+
     latest = df_typ["MONTH"].max()
     sl = df_typ[df_typ["MONTH"]==latest]
     multi_share = (sl.loc[sl["USER_TYPE"].str.contains("multi",case=False),"UNIQUE_USERS"].sum()
@@ -302,10 +309,10 @@ elif dim == "Activity/Sector" and not df_typ.empty and all(c in df_typ.columns f
     kpi(c1, "Multi-Sector User Share (latest)", pct(multi_share,1), "c")
     kpi(c2, "Engagement Multiplier (Multi/Single)", f"{engagement_mult:.2f}×" if pd.notna(engagement_mult) else "—", "d")
 
-    _plot_evolution_and_share(df_typ.rename(columns={"USER_TYPE":"CATEGORY"}), "CATEGORY",
-                              title_a="Unique Users by Activity/Sector",
-                              title_b="Activity/Sector Share (100%)")
-    insight("Multi-sector users tend to be fewer but more engaged (tx/user), signalling deeper ecosystem usage.")
+    _plot_evolution_and_share(df_typ, "CATEGORY",
+                              title_a="Unique Users by Activity/Sector & Level",
+                              title_b="Activity/Sector & Level — Share (100%)")
+    insight("Multi-sector users (especially power users) tend to be fewer but more engaged (tx/user), signalling deeper usage.")
 else:
     st.info("Missing or incomplete `user_cohort.csv` / `user_typology.csv`.")
 end_section()
@@ -391,7 +398,7 @@ if not df_bridge.empty and "TOTAL_BRIDGE_VOLUME_BILLIONS" in df_bridge.columns:
     st.plotly_chart(fig, use_container_width=True)
     insight(
         "Bridge activity trends upward, signalling stronger cross-chain liquidity mobility. "
-        "Further investigation can decompose inflows/outflows by origin/destination to reveal drivers."
+        "Further work can decompose inflows/outflows by origin/destination to reveal sources and sinks."
     )
 else:
     st.info("`data/bridged_volume.csv` missing required columns.")
@@ -434,7 +441,6 @@ section("8. User Adoption During Fee Evolution",
 
 df_fee_act = load_csv("fees_activity.csv")
 if df_fee_act.empty:
-    # fallback
     df_fee_act = load_csv("fees_price.csv").rename(columns={
         "AVG_TX_FEE_USD":"AVG_FEE_USD",
         "MONTHLY_TRANSACTIONS":"TOTAL_TRANSACTIONS",
@@ -475,39 +481,6 @@ if not df_fee_act.empty and "MONTH" in df_fee_act.columns:
         st.info("Could not find `UNIQUE_USERS/USERS_MILLIONS` and `AVG_FEE_USD` in fees CSVs.")
 else:
     st.info("`data/fees_activity.csv` or `data/fees_price.csv` missing `MONTH`.")
-end_section()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 9) Price vs Fee — Correlation
-# ──────────────────────────────────────────────────────────────────────────────
-section("9. Price vs Fee — Correlation",
-        "Scatter of monthly ETH price vs average transaction fee; Pearson correlation reported in KPIs.")
-
-df_fp = load_csv("fees_price.csv")
-if not df_fp.empty and all(c in df_fp.columns for c in ["MONTH","AVG_ETH_PRICE_USD","AVG_TX_FEE_USD"]):
-    x = pd.to_numeric(df_fp["AVG_ETH_PRICE_USD"], errors="coerce")
-    y = pd.to_numeric(df_fp["AVG_TX_FEE_USD"], errors="coerce")
-    ok = x.notna() & y.notna()
-    r = float(np.corrcoef(x[ok], y[ok])[0,1]) if ok.sum() >= 2 else np.nan
-
-    last_ratio = None
-    if "PRICE_TO_FEE_RATIO" in df_fp.columns:
-        last_ratio = pd.to_numeric(df_fp["PRICE_TO_FEE_RATIO"], errors="coerce").iloc[-1]
-    elif pd.notna(x.iloc[-1]) and pd.notna(y.iloc[-1]) and y.iloc[-1] != 0:
-        last_ratio = x.iloc[-1] / y.iloc[-1]
-
-    c1,c2 = st.columns(2)
-    kpi(c1, "Correlation (Price vs Fee)", f"{r:.2f}" if pd.notna(r) else "—", "c")
-    kpi(c2, "Price-to-Fee Ratio (latest)", f"{last_ratio:,.2f}" if pd.notna(last_ratio) else "—", "d")
-
-    fig = px.scatter(df_fp, x="AVG_ETH_PRICE_USD", y="AVG_TX_FEE_USD",
-                     labels={"AVG_ETH_PRICE_USD":"ETH Price (USD)", "AVG_TX_FEE_USD":"Avg TX Fee (USD)"},
-                     title="ETH Price vs Average TX Fee — Monthly")
-    fig.update_traces(marker=dict(size=8, opacity=0.85))
-    st.plotly_chart(fig, use_container_width=True)
-    insight("While positively related on L1, L2 adoption can flatten fees for a given price regime.")
-else:
-    st.info("`data/fees_price.csv` missing required columns.")
 end_section()
 
 # ──────────────────────────────────────────────────────────────────────────────
