@@ -581,44 +581,48 @@ if not df_fees.empty:
 
 # ===========================================================
 # 8) Activity Drivers — Fees, ETF Flows & Rates Direction
-# (Keep your existing "User Adoption During Fee Evolution" chart above this)
 # ===========================================================
 import pandas as pd, numpy as np, re
 import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
 
-# ---------- Helpers ----------
+# ---------- Helpers (HOTFIXED) ----------
 def read_csv_smart(path_rel, parse_dates=None):
-    """Read CSV from data/, auto-detect ; or , separators."""
     p = Path("data") / path_rel
     if not p.exists():
         return pd.DataFrame()
     try:
         df = pd.read_csv(p, sep=",", parse_dates=parse_dates)
-        if df.shape[1] == 1:  # likely semicolon
+        if df.shape[1] == 1:  # likely semicolon-separated
             df = pd.read_csv(p, sep=";", parse_dates=parse_dates)
     except Exception:
         df = pd.read_csv(p, sep=None, engine="python", parse_dates=parse_dates)
     return df
 
-def normalize_month(df: pd.DataFrame, col: str = "MONTH", month_start: bool = True) -> pd.DataFrame:
-    """Coerce MONTH to tz-naive monthly buckets (MS). Safe if df/col missing."""
+def month_start(dt_series: pd.Series) -> pd.Series:
+    """
+    Convert any datetime-like series to tz-naive month-start (YYYY-MM-01 00:00:00).
+    Works for strings, datetime64 (tz or not), Periods, etc.
+    """
+    # to datetime first
+    s = pd.to_datetime(dt_series, errors="coerce", utc=True)
+    # drop timezone -> naive
+    s = s.dt.tz_convert("UTC").dt.tz_localize(None)
+    # take first day of month as naive ns timestamp
+    # (astype('datetime64[M]') gives month bucket, then cast back to ns)
+    s = s.values.astype("datetime64[M]").astype("datetime64[ns]")
+    return pd.to_datetime(s)
+
+def normalize_month(df: pd.DataFrame, col: str = "MONTH") -> pd.DataFrame:
+    """Coerce df[col] to tz-naive month-start; no errors if df/col missing."""
     if df is None or df.empty or col not in df.columns:
         return df
-    df[col] = pd.to_datetime(df[col], errors="coerce", utc=False)
-    # strip tz if present
-    if pd.api.types.is_datetime64tz_dtype(df[col].dtype):
-        df[col] = df[col].dt.tz_convert("UTC").dt.tz_localize(None)
-    # bucket to month-start
-    if month_start:
-        df[col] = df[col].dt.to_period("M").dt.to_timestamp("MS")
-    else:
-        df[col] = df[col].dt.to_period("M").dt.to_timestamp("M")
+    df = df.copy()
+    df[col] = month_start(df[col])
     return df
 
 def kpi_box(col, html, style=None):
-    # Use your existing kpi_inline if present; fallback to a minimal chip
     try:
         kpi_inline(col, html, style=(style or KPI_STYLE.get("blue", {})))
     except Exception:
@@ -637,28 +641,25 @@ def spearman_safe(x, y):
 eth  = read_csv_smart("eth_price.csv",  parse_dates=["MONTH"])
 fees = read_csv_smart("fees_price.csv", parse_dates=["MONTH"])
 
-# ---------- ETFs: prefer monthly if present; else derive from etf_flows.csv ----------
+# ---------- ETFs (monthly preferred) ----------
 etf_monthly = read_csv_smart("etf_flows_monthly.csv", parse_dates=["MONTH"])
 if etf_monthly.empty:
     raw = read_csv_smart("etf_flows.csv")
     if not raw.empty:
-        # If a MONTH exists and a flow col exists, keep it directly
         month_like = [c for c in raw.columns if c.upper() == "MONTH"]
         flow_like  = [c for c in raw.columns if "ETF_NET_FLOW" in c.upper()]
         if month_like and flow_like:
-            etf_monthly = raw.rename(columns={flow_like[0]: "ETF_NET_FLOW_USD_MILLIONS"})
-            etf_monthly["MONTH"] = pd.to_datetime(etf_monthly[month_like[0]], errors="coerce")
+            etf_monthly = raw.rename(columns={flow_like[0]: "ETF_NET_FLOW_USD_MILLIONS"}).copy()
+            etf_monthly["MONTH"] = month_start(etf_monthly[month_like[0]])
             etf_monthly = etf_monthly[["MONTH", "ETF_NET_FLOW_USD_MILLIONS"]].dropna(subset=["MONTH"])
         else:
-            # Try generic monthly sum: look for a DATE and sum numeric columns per month
             date_like = [c for c in raw.columns if "DATE" in c.upper()]
             if date_like:
                 df = raw.copy()
-                df["DATE"] = pd.to_datetime(df[date_like[0]], errors="coerce")
+                df["DATE"] = pd.to_datetime(df[date_like[0]], errors="coerce", utc=True)
                 df = df.dropna(subset=["DATE"])
-                monthly = df.select_dtypes(include=["number"]).copy()
-                monthly["MONTH"] = df["DATE"].values.astype("datetime64[M]")
-                monthly = monthly.groupby("MONTH").sum(numeric_only=True).reset_index()
+                df["MONTH"] = month_start(df["DATE"])
+                monthly = df.groupby("MONTH", as_index=False).sum(numeric_only=True)
                 monthly["ETF_NET_FLOW_USD_MILLIONS"] = monthly.select_dtypes(include=["number"]).sum(axis=1)
                 etf_monthly = monthly[["MONTH", "ETF_NET_FLOW_USD_MILLIONS"]]
 
@@ -668,29 +669,29 @@ if not etf_monthly.empty:
         etf_monthly["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"
     )
 
-# ---------- Rates: build mode-based CUT/HOLD/HIKE from expectations ----------
+# ---------- Rates expectations -> CUT/HOLD/HIKE ----------
 rates_dir = pd.DataFrame()
-rates_exp = read_csv_smart("rates_expectations.csv")  # your probabilities table (buckets as columns)
+rates_exp = read_csv_smart("rates_expectations.csv")  # probs table (bucket columns)
 if not rates_exp.empty:
     fed_hist = read_csv_smart("fedfunds_history.csv", parse_dates=["observation_date"])
 
-    # Melt expectations to long
+    # melt expectations
     date_col = rates_exp.columns[0]
-    long = rates_exp.melt(id_vars=[date_col], var_name="RANGE_BPS", value_name="PROB")
+    long = rates_exp.melt(id_vars=[date_col], var_name="RANGE_BPS", value_name="PROB").copy()
 
-    # parse various date formats
+    # parse date robustly
     def parse_dt_any(s):
         for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
             try:
-                return pd.to_datetime(s, format=fmt)
+                return pd.to_datetime(s, format=fmt, utc=True)
             except Exception:
                 continue
-        return pd.to_datetime(s, errors="coerce")
+        return pd.to_datetime(s, errors="coerce", utc=True)
 
     long["DATE"] = long[date_col].apply(parse_dt_any)
     long = long.dropna(subset=["DATE"])
 
-    # prob to 0..1
+    # normalize probabilities to 0..1
     def to_prob01(x):
         try:
             v = float(str(x).replace("%", "").replace(",", ""))
@@ -700,7 +701,7 @@ if not rates_exp.empty:
 
     long["PROB"] = long["PROB"].apply(to_prob01)
 
-    # extract bounds and midpoints
+    # extract bounds/midpoints
     def bounds_bps(s):
         m = re.findall(r"(\d+)\s*-\s*(\d+)", str(s))
         if not m:
@@ -713,23 +714,21 @@ if not rates_exp.empty:
     long["UPPER_BPS"] = [x[1] for x in lohi]
     long["MIDPOINT_BPS"] = (long["LOWER_BPS"] + long["UPPER_BPS"]) / 2.0
 
-    # derive MONTH (tz-naive)
-    long["MONTH"] = long["DATE"].dt.to_period("M").dt.to_timestamp("MS")
+    # >>> HOTFIX: derive MONTH (tz-naive month-start) without .to_timestamp("MS")
+    long["MONTH"] = month_start(long["DATE"])
 
-    # attach current FedFunds per MONTH (tz-naive)
+    # attach FedFunds per MONTH (tz-naive)
     if not fed_hist.empty and set(["observation_date", "FEDFUNDS"]).issubset(fed_hist.columns):
         fed = fed_hist.rename(columns={"observation_date": "MONTH"})[["MONTH", "FEDFUNDS"]].copy()
-        fed["MONTH"] = pd.to_datetime(fed["MONTH"], errors="coerce", utc=False)
-        fed = normalize_month(fed, "MONTH")
+        fed["MONTH"] = month_start(fed["MONTH"])
         fed["FEDFUNDS_BPS"] = fed["FEDFUNDS"] * 100.0
     else:
-        # fallback constant (4.33%)
+        # fallback: constant 4.33%
         unique_months = sorted(long["MONTH"].dropna().unique())
         fed = pd.DataFrame({"MONTH": unique_months, "FEDFUNDS_BPS": 433.0})
 
     long = long.merge(fed[["MONTH", "FEDFUNDS_BPS"]], on="MONTH", how="left")
 
-    # classify by mode per DATE
     MODE_THRESHOLD = 0.55
 
     def classify_date(df_date):
@@ -753,12 +752,11 @@ if not rates_exp.empty:
 
     mode = (
         long.groupby(["DATE", "MONTH"], as_index=False)
-            .apply(classify_date, include_groups=False)  # FutureWarning-safe
+            .apply(classify_date, include_groups=False)
             .reset_index(level=0, drop=True)
             .reset_index()
     )
 
-    # implied rate (optional)
     implied = (
         long.groupby("DATE")
             .apply(lambda g: np.sum(g["PROB"] * g["MIDPOINT_BPS"]) if g["PROB"].sum() > 0 else np.nan, include_groups=False)
@@ -768,7 +766,7 @@ if not rates_exp.empty:
     mode = mode.merge(implied, on="DATE", how="left")
     mode["FFR_IMPLIED_NEXT_3M"] = mode["FFR_IMPLIED_BPS"] / 100.0
 
-    # monthly last observation
+    # monthly final observation
     rates_dir = (
         mode.sort_values("DATE")
             .groupby("MONTH", as_index=False)
@@ -776,28 +774,34 @@ if not rates_exp.empty:
             .reset_index(drop=True)
     )
 
-# ---------- Normalize all MONTHs BEFORE merging ----------
-eth          = normalize_month(eth, "MONTH")
-fees         = normalize_month(fees, "MONTH")
-etf_monthly  = normalize_month(etf_monthly, "MONTH")
-rates_dir    = normalize_month(rates_dir, "MONTH")
+# ---------- Normalize MONTH on all parts (tz-naive, month-start) ----------
+eth         = normalize_month(eth, "MONTH")
+fees        = normalize_month(fees, "MONTH")
+etf_monthly = normalize_month(etf_monthly, "MONTH")
+rates_dir   = normalize_month(rates_dir, "MONTH")
 
 # ---------- Build panel ----------
 pieces = []
 if not eth.empty:
-    pieces.append(eth[["MONTH", "ACTIVITY_INDEX", "TOTAL_TRANSACTIONS", "UNIQUE_USERS"]])
+    # Keep only columns we use
+    keep = [c for c in ["MONTH", "ACTIVITY_INDEX", "TOTAL_TRANSACTIONS", "UNIQUE_USERS"] if c in eth.columns]
+    pieces.append(eth[keep])
 if not fees.empty:
     keep = [c for c in ["MONTH", "AVG_TX_FEE_USD", "AVG_TX_FEE_ETH", "AVG_GAS_PRICE_GWEI", "PRICE_TO_FEE_RATIO"] if c in fees.columns]
     pieces.append(fees[keep])
-if not etf_monthly.empty:
+if not etf_monthly.empty and "ETF_NET_FLOW_USD_MILLIONS" in etf_monthly.columns:
     pieces.append(etf_monthly[["MONTH", "ETF_NET_FLOW_USD_MILLIONS"]])
 if not rates_dir.empty:
-    rates_dir["DIRECTION_SIGN"] = rates_dir["DIRECTION"].map({"CUT": -1, "HOLD": 0, "HIKE": 1})
-    rates_dir["DIRECTION_WEIGHTED"] = rates_dir["DIRECTION_SIGN"] * rates_dir["MODE_PROB"]
-    pieces.append(rates_dir[["MONTH", "DIRECTION", "MODE_PROB", "DIRECTION_WEIGHTED", "FFR_IMPLIED_NEXT_3M"]])
+    r = rates_dir.copy()
+    r["DIRECTION_SIGN"] = r["DIRECTION"].map({"CUT": -1, "HOLD": 0, "HIKE": 1})
+    r["DIRECTION_WEIGHTED"] = r["DIRECTION_SIGN"] * r["MODE_PROB"]
+    pieces.append(r[["MONTH", "DIRECTION", "MODE_PROB", "DIRECTION_WEIGHTED", "FFR_IMPLIED_NEXT_3M"]])
 
 panel = None
 for d in pieces:
+    # one last guard: coerce MONTH to naive ns for every piece
+    d = d.copy()
+    d["MONTH"] = month_start(d["MONTH"])
     panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
 
 if panel is None or panel.empty:
@@ -808,10 +812,9 @@ if panel is None or panel.empty:
 else:
     panel = panel.sort_values("MONTH").reset_index(drop=True)
 
-    # ---- Header ----
     draw_section(
         "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
-        "Relates **transaction costs**, **ETF net flows** and **policy direction** to Ethereum’s on-chain activity. Rates direction is inferred via the **most probable bucket** vs the month’s Fed Funds level."
+        "Relates **transaction costs**, **ETF net flows** and **policy direction** to Ethereum’s on-chain activity. Rates direction is inferred via the **most probable bucket** vs each month’s Fed Funds level."
     )
 
     # ---- KPIs (latest) ----
@@ -824,7 +827,6 @@ else:
         etf_m   = last.get("ETF_NET_FLOW_USD_MILLIONS", pd.Series([np.nan])).iloc[0]
         dir_lab = last.get("DIRECTION", pd.Series(["—"])).iloc[0]
         prob    = last.get("MODE_PROB", pd.Series([np.nan])).iloc[0]
-
         kpi_box(c1, f"<strong>Activity Index (latest):</strong> <span class='v'>{(ai if pd.notna(ai) else 0):,.2f}</span>", style=KPI_STYLE.get("blue"))
         kpi_box(c2, f"<strong>Avg Tx Fee (USD):</strong> <span class='v'>{(fee_usd if pd.notna(fee_usd) else 0):,.2f}</span>", style=KPI_STYLE.get("teal"))
         kpi_box(c3, f"<strong>ETF Net Flow:</strong> <span class='v'>{(etf_m if pd.notna(etf_m) else 0):,.1f}M</span>", style=KPI_STYLE.get("green"))
@@ -904,6 +906,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
