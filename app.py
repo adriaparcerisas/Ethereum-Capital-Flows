@@ -101,8 +101,11 @@ KPI_STYLE = {
 # -----------------------------------------------------------
 # Title + Executive Summary (whole text inside "context" box)
 # -----------------------------------------------------------
-st.markdown('<div class="h1">Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</div>', unsafe_allow_html=True)
-st.markdown('<div class="h1-sub">Data as of most recent month available</div>', unsafe_allow_html=True)
+st.markdown(
+    "<h1>Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</h1>",
+    unsafe_allow_html=True
+)
+st.caption("Data as of most recent month available")
 
 st.markdown("""
 <div class="section">
@@ -447,4 +450,5 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
