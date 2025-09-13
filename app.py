@@ -192,52 +192,91 @@ if not df_volcat.empty:
     insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 
 # -----------------------------------------------------------
-# 2) Monthly Active Addresses and Transactions by Category (Toggle)
+# 2) Monthly Active Addresses and Transactions by Sector (Toggle)
 # -----------------------------------------------------------
 draw_section(
-    "2. Monthly Active Addresses and Transactions by Category",
-    "Choose one metric at a time to isolate user base (addresses) vs network load (transactions)."
+    "2. Monthly Active Addresses and Transactions by Sector",
+    "Choose one metric at a time to isolate user base (avg daily active addresses) vs network load (transactions)."
 )
 
 if not df_active.empty:
-    metric = st.radio(
-        "Metric", options=["Active Addresses","Transactions"],
-        horizontal=True, index=0, key="active_metric"
-    )
+    # Expecting columns: MONTH, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS
+    required = {"MONTH","SECTOR","AVG_DAILY_ACTIVE_ADDRESSES","TRANSACTIONS"}
+    missing = required - set(df_active.columns)
+    if missing:
+        st.warning(f"Active activity CSV missing columns: {', '.join(sorted(missing))}")
+    else:
+        metric = st.radio(
+            "Metric", options=["Avg Daily Active Addresses","Transactions"],
+            horizontal=True, index=0, key="active_metric"
+        )
 
-    # metric selection
-    y_col = "ACTIVE_ADDRESSES" if metric=="Active Addresses" else "TRANSACTIONS"
-    col_color = "#14b8a6" if metric=="Active Addresses" else "#1d4ed8"
+        # Map metric to column + color
+        if metric == "Avg Daily Active Addresses":
+            y_col = "AVG_DAILY_ACTIVE_ADDRESSES"
+            col_style = KPI_STYLE["teal"]   # users
+        else:
+            y_col = "TRANSACTIONS"
+            col_style = KPI_STYLE["blue"]   # tx
 
-    # KPI
-    latest = df_active["MONTH"].max()
-    d_last = df_active[df_active["MONTH"]==latest]
-    peak_val = df_active.groupby("MONTH")[y_col].sum().max()
-    c1, c2 = st.columns(2)
-    kpi_inline(c1, f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>",
-               style=KPI_STYLE["teal"] if metric=="Active Addresses" else KPI_STYLE["blue"])
-    # DEX share (addresses or tx)
-    dex_share2 = d_last.pipe(
-        lambda d: 100 * d.loc[d["CATEGORY"]=="DEX Trading",y_col].sum() / d[y_col].sum()
-        if d[y_col].sum() else np.nan
-    )
-    kpi_inline(c2, f"<strong>DEX Share (latest):</strong> <span class='v'>{dex_share2:,.1f}%</span>",
-               style=KPI_STYLE["blue"])
+        latest = df_active["MONTH"].max()
+        d_last = df_active[df_active["MONTH"]==latest]
 
-    # line per category
-    fig2 = go.Figure()
-    for cat in df_active["CATEGORY"].unique():
-        d = df_active[df_active["CATEGORY"]==cat].sort_values("MONTH")
-        fig2.add_trace(go.Scatter(
-            x=d["MONTH"], y=d[y_col], name=cat,
-            mode="lines+markers",
-            line=dict(width=2)
-        ))
-    fig2.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10),
-                       yaxis_title=metric)
-    st.plotly_chart(fig2, use_container_width=True)
+        # KPIs
+        peak_val = df_active.groupby("MONTH")[y_col].sum().max()
+        c1, c2 = st.columns(2)
+        kpi_inline(c1, f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>", style=col_style)
 
-    insight("DEX users consistently dominate ecosystem activity, contributing most active addresses and transactions.")
+        # DEX Trading share (latest)
+        dex_share2 = d_last.pipe(
+            lambda d: 100 * d.loc[d["SECTOR"]=="DEX Trading", y_col].sum() / d[y_col].sum()
+            if d[y_col].sum() else np.nan
+        )
+        kpi_inline(c2, f"<strong>DEX Trading Share (latest):</strong> <span class='v'>{dex_share2:,.1f}%</span>", style=KPI_STYLE["blue"])
+
+        # Order sectors for consistent x grouping/legend
+        desired_order = [
+            "DEX Trading",
+            "Lending Deposits",
+            "Lending Borrows",
+            "NFT Sales",
+            "NFT Transfers",
+            "Others",
+        ]
+        # Keep any unexpected sectors at the end
+        seen = [s for s in desired_order if s in df_active["SECTOR"].unique()]
+        tail = [s for s in df_active["SECTOR"].unique() if s not in desired_order]
+        sectors_order = seen + tail
+
+        # Colors per sector (can tune to match your palette)
+        sector_colors = {
+            "DEX Trading": "#1d4ed8",       # blue
+            "Lending Deposits": "#10b981",  # green
+            "Lending Borrows": "#7c3aed",   # violet
+            "NFT Sales": "#f59e0b",         # amber
+            "NFT Transfers": "#fb7185",     # rose
+            "Others": "#64748b",            # slate
+        }
+
+        fig2 = go.Figure()
+        for sec in sectors_order:
+            d = df_active[df_active["SECTOR"]==sec].sort_values("MONTH")
+            if d.empty: 
+                continue
+            fig2.add_trace(go.Scatter(
+                x=d["MONTH"], y=d[y_col], name=sec,
+                mode="lines+markers",
+                line=dict(width=2, color=sector_colors.get(sec, None))
+            ))
+        fig2.update_layout(
+            height=420, margin=dict(l=10, r=10, t=10, b=10),
+            yaxis_title=metric,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0)
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+        insight("DEX activity leads overall participation. NFT Transfers and ‘Others’ (token transfers) contextualize baseline network usage.")
+
 
 # -----------------------------------------------------------
 # 3) User Activity & Sector Breadth (Merged)
@@ -450,5 +489,6 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
