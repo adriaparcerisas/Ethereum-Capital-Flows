@@ -243,68 +243,85 @@ draw_section(
 )
 
 if not df_active.empty:
-    # Expecting columns: MONTH, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS
+    # Expecting MONTH, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS
     required = {"MONTH","SECTOR","AVG_DAILY_ACTIVE_ADDRESSES","TRANSACTIONS"}
     missing = required - set(df_active.columns)
     if missing:
         st.warning(f"Active activity CSV missing columns: {', '.join(sorted(missing))}")
     else:
+        # ❗ Merge NFT Transfers into Others (token transfers)
+        data = df_active.copy()
+        data["SECTOR"] = data["SECTOR"].replace({"NFT Transfers": "Others"})
+        # aggregate in case both 'Others' and 'NFT Transfers' existed for a month
+        data = (
+            data.groupby(["MONTH","SECTOR"], as_index=False)
+                .agg({
+                    "AVG_DAILY_ACTIVE_ADDRESSES": "sum",
+                    "TRANSACTIONS": "sum"
+                })
+                .sort_values(["MONTH","SECTOR"])
+        )
+
+        # UI: metric toggle
         metric = st.radio(
             "Metric", options=["Avg Daily Active Addresses","Transactions"],
             horizontal=True, index=0, key="active_metric"
         )
-
-        # Map metric to column + color
         if metric == "Avg Daily Active Addresses":
             y_col = "AVG_DAILY_ACTIVE_ADDRESSES"
-            col_style = KPI_STYLE["teal"]   # users
+            kpi_style = KPI_STYLE["teal"]   # users
         else:
             y_col = "TRANSACTIONS"
-            col_style = KPI_STYLE["blue"]   # tx
+            kpi_style = KPI_STYLE["blue"]   # tx
 
-        latest = df_active["MONTH"].max()
-        d_last = df_active[df_active["MONTH"]==latest]
+        latest = data["MONTH"].max()
+        d_last = data[data["MONTH"]==latest]
 
         # KPIs
-        peak_val = df_active.groupby("MONTH")[y_col].sum().max()
+        peak_val = data.groupby("MONTH")[y_col].sum().max()
         c1, c2 = st.columns(2)
-        kpi_inline(c1, f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>", style=col_style)
-
-        # DEX Trading share (latest)
-        dex_share2 = d_last.pipe(
-            lambda d: 100 * d.loc[d["SECTOR"]=="DEX Trading", y_col].sum() / d[y_col].sum()
-            if d[y_col].sum() else np.nan
+        kpi_inline(
+            c1,
+            f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>",
+            style=kpi_style
         )
-        kpi_inline(c2, f"<strong>DEX Trading Share (latest):</strong> <span class='v'>{dex_share2:,.1f}%</span>", style=KPI_STYLE["blue"])
 
-        # Order sectors for consistent x grouping/legend
+        dex_share = np.nan
+        if not d_last.empty and d_last[y_col].sum() > 0:
+            dex_share = 100 * d_last.loc[d_last["SECTOR"]=="DEX Trading", y_col].sum() / d_last[y_col].sum()
+        kpi_inline(
+            c2,
+            f"<strong>DEX Trading Share (latest):</strong> <span class='v'>{(0 if pd.isna(dex_share) else dex_share):,.1f}%</span>",
+            style=KPI_STYLE["blue"]
+        )
+
+        # Fixed order (without a separate NFT Transfers; it's merged into Others)
         desired_order = [
             "DEX Trading",
             "Lending Deposits",
             "Lending Borrows",
             "NFT Sales",
-            "NFT Transfers",
-            "Others",
+            "Others",  # includes NFT Transfers
         ]
-        # Keep any unexpected sectors at the end
-        seen = [s for s in desired_order if s in df_active["SECTOR"].unique()]
-        tail = [s for s in df_active["SECTOR"].unique() if s not in desired_order]
+        # Keep unexpected sectors (if any) at the end
+        seen = [s for s in desired_order if s in data["SECTOR"].unique()]
+        tail = [s for s in data["SECTOR"].unique() if s not in desired_order]
         sectors_order = seen + tail
 
-        # Colors per sector (can tune to match your palette)
+        # Colors per sector
         sector_colors = {
             "DEX Trading": "#1d4ed8",       # blue
             "Lending Deposits": "#10b981",  # green
             "Lending Borrows": "#7c3aed",   # violet
             "NFT Sales": "#f59e0b",         # amber
-            "NFT Transfers": "#fb7185",     # rose
-            "Others": "#64748b",            # slate
+            "Others": "#64748b",            # slate  (now includes NFT Transfers)
         }
 
+        # Plot lines per sector
         fig2 = go.Figure()
         for sec in sectors_order:
-            d = df_active[df_active["SECTOR"]==sec].sort_values("MONTH")
-            if d.empty: 
+            d = data[data["SECTOR"]==sec].sort_values("MONTH")
+            if d.empty:
                 continue
             fig2.add_trace(go.Scatter(
                 x=d["MONTH"], y=d[y_col], name=sec,
@@ -318,8 +335,9 @@ if not df_active.empty:
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-        insight("DEX activity leads overall participation. NFT Transfers and ‘Others’ (token transfers) contextualize baseline network usage.")
-
+        insight("Both active addresses and transactions have shown strong growth over time. "
+                "Among the sectors, 'Others' — mainly token transfers (now including NFT transfers) — "
+                "emerges as one of the fastest-growing categories, underscoring its central role in on-chain activity.")
 
 # -----------------------------------------------------------
 # 3) User Activity & Sector Breadth (Merged)
@@ -532,6 +550,7 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
