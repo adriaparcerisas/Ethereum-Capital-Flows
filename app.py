@@ -579,11 +579,189 @@ if not df_fees.empty:
     fig8.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig8, use_container_width=True)
 
+# ===========================================================
+# 8) Activity Drivers — Fees, ETF Flows & Rates Direction
+# ===========================================================
+import plotly.express as px
+
+# --- small helpers (safe even if already defined) ---
+def _read_csv_any(candidates, parse_dates=None):
+    if isinstance(candidates, str): candidates = [candidates]
+    for p in candidates:
+        try:
+            df = pd.read_csv(f"data/{p}", sep=",", parse_dates=parse_dates)
+            if df.shape[1] == 1:  # maybe semicolon
+                df = pd.read_csv(f"data/{p}", sep=";", parse_dates=parse_dates)
+            return df
+        except Exception:
+            continue
+    return pd.DataFrame()
+
+def _kpi_box(col, html, style=None):
+    # Uses your existing kpi_inline if available; otherwise fallback to st.markdown
+    try:
+        kpi_inline(col, html, style=(style or KPI_STYLE.get("blue", {})))
+    except Exception:
+        col.markdown(f"<div style='padding:8px 12px;border-left:4px solid #2563eb;background:#f8fafc;border-radius:6px'>{html}</div>", unsafe_allow_html=True)
+
+def _spearman(x, y):
+    s = pd.concat([x, y], axis=1).dropna()
+    if len(s) < 3: return np.nan
+    return s.corr(method="spearman").iloc[0,1]
+
+# --- load core data ---
+eth = _read_csv_any("eth_price.csv", parse_dates=["MONTH"])
+fees = _read_csv_any("fees_price.csv", parse_dates=["MONTH"])
+# ETF monthly can be named etf_flows_monthly.csv (preferred) or etf_flows.csv
+etf = _read_csv_any(["etf_flows_monthly.csv", "etf_flows.csv"], parse_dates=["MONTH"])
+rates = _read_csv_any("rates_direction_monthly.csv", parse_dates=["MONTH"])
+
+# normalize columns presence
+if not etf.empty:
+    # keep only MONTH & ETF_NET_FLOW_USD_MILLIONS (the volume column may be blank)
+    etf_cols = [c for c in etf.columns if c.upper().startswith("ETF_NET_FLOW")]
+    if etf_cols:
+        etf = etf[["MONTH", etf_cols[0]]].rename(columns={etf_cols[0]: "ETF_NET_FLOW_USD_MILLIONS"})
+    else:
+        etf["ETF_NET_FLOW_USD_MILLIONS"] = pd.NA
+        etf = etf[["MONTH", "ETF_NET_FLOW_USD_MILLIONS"]]
+
+# map rates DIRECTION to numeric
+if not rates.empty and "DIRECTION" in rates.columns:
+    dir_map = {"CUT": -1, "HOLD": 0, "HIKE": 1}
+    rates["DIRECTION_SIGN"] = rates["DIRECTION"].map(dir_map)
+    if "MODE_PROB" in rates.columns:
+        rates["DIRECTION_WEIGHTED"] = rates["DIRECTION_SIGN"] * rates["MODE_PROB"]
+
+# build panel
+panel = None
+pieces = []
+
+if not eth.empty:
+    pieces.append(eth[["MONTH","ACTIVITY_INDEX","TOTAL_TRANSACTIONS","UNIQUE_USERS"]])
+if not fees.empty:
+    # prefer AVG_TX_FEE_USD; keep ETH/gas if needed later
+    keep = [c for c in ["MONTH","AVG_TX_FEE_USD","AVG_TX_FEE_ETH","AVG_GAS_PRICE_GWEI","PRICE_TO_FEE_RATIO"] if c in fees.columns]
+    pieces.append(fees[keep])
+if not etf.empty:
+    pieces.append(etf)
+if not rates.empty:
+    keep = [c for c in ["MONTH","DIRECTION","MODE_PROB","DIRECTION_WEIGHTED","FFR_IMPLIED_NEXT_3M"] if c in rates.columns]
+    pieces.append(rates[keep])
+
+for d in pieces:
+    panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
+
+if panel is None or panel.empty:
+    st.info("Activity Drivers: missing inputs (`eth_price.csv`, `fees_price.csv`, `etf_flows_monthly.csv`/`etf_flows.csv`, `rates_direction_monthly.csv`).")
+else:
+    panel = panel.sort_values("MONTH").reset_index(drop=True)
+
+    # ---- Header + copy ----
+    draw_section(
+        "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
+        "Quantifies how **transaction costs**, **ETF net flows** and **policy direction** co-move with Ethereum’s on-chain activity. Toggle a lag to test lead/lag effects."
+    )
+
+    # ---- KPIs (latest) ----
+    latest = panel["MONTH"].max()
+    last = panel.loc[panel["MONTH"]==latest].tail(1)
+
+    c1,c2,c3,c4 = st.columns(4)
+    if not last.empty:
+        ai = last["ACTIVITY_INDEX"].iloc[0] if "ACTIVITY_INDEX" in last else np.nan
+        fee_usd = last["AVG_TX_FEE_USD"].iloc[0] if "AVG_TX_FEE_USD" in last else np.nan
+        etf_m = last["ETF_NET_FLOW_USD_MILLIONS"].iloc[0] if "ETF_NET_FLOW_USD_MILLIONS" in last else np.nan
+        dir_label = last["DIRECTION"].iloc[0] if "DIRECTION" in last else "—"
+        prob = last["MODE_PROB"].iloc[0] if "MODE_PROB" in last else np.nan
+
+        _kpi_box(c1, f"<strong>Activity Index (latest):</strong> <span class='v'>{(ai if pd.notna(ai) else 0):,.2f}</span>", style=KPI_STYLE.get("blue"))
+        _kpi_box(c2, f"<strong>Avg Tx Fee (USD):</strong> <span class='v'>{(fee_usd if pd.notna(fee_usd) else 0):,.2f}</span>", style=KPI_STYLE.get("teal"))
+        _kpi_box(c3, f"<strong>ETF Net Flow:</strong> <span class='v'>{(etf_m if pd.notna(etf_m) else 0):,.1f}M</span>", style=KPI_STYLE.get("green"))
+        _kpi_box(c4, f"<strong>Fed Direction:</strong> <span class='v'>{dir_label}</span> {'' if pd.isna(prob) else f'({prob:.0%})'}", style=KPI_STYLE.get("violet"))
+
+    # ---- Evolution chart (multi-series) ----
+    # left axis: Activity Index; right axis: Fees (USD) and ETF net flows ($M); add a thin bar for Fed direction (weighted)
+    fig = go.Figure()
+
+    if "ACTIVITY_INDEX" in panel.columns:
+        fig.add_trace(go.Scatter(x=panel["MONTH"], y=panel["ACTIVITY_INDEX"],
+                                 mode="lines+markers", name="Activity Index",
+                                 line=dict(width=3, color="#1d4ed8")))
+
+    if "AVG_TX_FEE_USD" in panel.columns:
+        fig.add_trace(go.Scatter(x=panel["MONTH"], y=panel["AVG_TX_FEE_USD"],
+                                 mode="lines", name="Avg Tx Fee (USD)",
+                                 line=dict(width=2, dash="dot", color="#0ea5e9"),
+                                 yaxis="y2"))
+
+    if "ETF_NET_FLOW_USD_MILLIONS" in panel.columns:
+        fig.add_trace(go.Bar(x=panel["MONTH"], y=panel["ETF_NET_FLOW_USD_MILLIONS"],
+                             name="ETF Net Flow (M)", marker_color="#10b981",
+                             opacity=0.65, yaxis="y2"))
+
+    # Optional rates direction strip (weighted)
+    if "DIRECTION_WEIGHTED" in panel.columns:
+        scale = max(1.0, np.nanmax(np.abs(panel["ETF_NET_FLOW_USD_MILLIONS"])) if "ETF_NET_FLOW_USD_MILLIONS" in panel else 1.0)
+        fig.add_trace(go.Bar(x=panel["MONTH"], y=panel["DIRECTION_WEIGHTED"]* (0.15*scale),
+                             name="Rates Direction (weighted)", marker_color="#7c3aed",
+                             opacity=0.25, yaxis="y2"))
+
+    fig.update_layout(
+        height=460, margin=dict(l=10,r=10,t=10,b=10),
+        barmode="overlay",
+        yaxis=dict(title="Activity Index"),
+        yaxis2=dict(title="Fees (USD) / ETF Net Flow (M)", overlaying="y", side="right"),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Scatter & lag analysis
+    st.markdown("**Lag analysis** — test if drivers lead activity (shift the driver by k months).")
+    lag = st.slider("Lag k (months, positive = driver leads)", min_value=-6, max_value=6, value=0, step=1, key="drivers_lag")
+
+    # Build a lagged frame
+    lagged = panel.copy()
+    if "ETF_NET_FLOW_USD_MILLIONS" in lagged:
+        lagged["ETF_LAG"] = lagged["ETF_NET_FLOW_USD_MILLIONS"].shift(lag)
+    if "AVG_TX_FEE_USD" in lagged:
+        lagged["FEE_LAG"] = lagged["AVG_TX_FEE_USD"].shift(lag)
+    if "DIRECTION_WEIGHTED" in lagged:
+        lagged["RATES_LAG"] = lagged["DIRECTION_WEIGHTED"].shift(lag)
+
+    # 2x scatter: Activity vs Fees; Activity vs ETF
+    sc_cols = st.columns(2)
+    if all(c in lagged.columns for c in ["ACTIVITY_INDEX","FEE_LAG"]):
+        sfee = lagged[["ACTIVITY_INDEX","FEE_LAG"]].dropna()
+        fee_r = _spearman(sfee["FEE_LAG"], sfee["ACTIVITY_INDEX"])
+        fig_s1 = px.scatter(sfee, x="FEE_LAG", y="ACTIVITY_INDEX", title=f"Activity vs Avg Tx Fee (lag {lag}) — Spearman ρ={fee_r:.2f}" if fee_r==fee_r else "Activity vs Avg Tx Fee")
+        fig_s1.update_layout(height=400, margin=dict(l=10,r=10,t=40,b=10))
+        sc_cols[0].plotly_chart(fig_s1, use_container_width=True)
+
+    if all(c in lagged.columns for c in ["ACTIVITY_INDEX","ETF_LAG"]):
+        setf = lagged[["ACTIVITY_INDEX","ETF_LAG"]].dropna()
+        etf_r = _spearman(setf["ETF_LAG"], setf["ACTIVITY_INDEX"])
+        fig_s2 = px.scatter(setf, x="ETF_LAG", y="ACTIVITY_INDEX", title=f"Activity vs ETF Net Flow (lag {lag}) — Spearman ρ={etf_r:.2f}" if etf_r==etf_r else "Activity vs ETF Net Flow")
+        fig_s2.update_layout(height=400, margin=dict(l=10,r=10,t=40,b=10))
+        sc_cols[1].plotly_chart(fig_s2, use_container_width=True)
+
+    # Quick textual insight
+    ins = []
+    if 'ACTIVITY_INDEX' in panel and 'AVG_TX_FEE_USD' in panel:
+        ins.append(f"Fees corr (ρ)≈{_spearman(panel['AVG_TX_FEE_USD'], panel['ACTIVITY_INDEX']):.2f}")
+    if 'ACTIVITY_INDEX' in panel and 'ETF_NET_FLOW_USD_MILLIONS' in panel:
+        ins.append(f"ETF flows corr (ρ)≈{_spearman(panel['ETF_NET_FLOW_USD_MILLIONS'], panel['ACTIVITY_INDEX']):.2f}")
+    st.caption(" • ".join([s for s in ins if s and "nan" not in s.lower()]))
+
+    insight("Lower fees often coincide with higher on-chain activity; positive ETF net flows tend to reinforce risk-on regimes. Try k>0 to see if drivers lead activity.")
+
+
 # -----------------------------------------------------------
 # Footer
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
