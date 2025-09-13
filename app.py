@@ -450,32 +450,66 @@ if not df_lend.empty:
     insight("Platform concentration can hint at systemic risk or liquidity incentives. Monitoring shifts helps identify where collateral is migrating.")
 
 # -----------------------------------------------------------
-# 6) Cross-Chain Connectivity — Bridge Volume (Monthly)
+# 6) Cross-Chain Connectivity — Bridge Flows (Monthly)
 # -----------------------------------------------------------
 draw_section(
-    "6. Cross-Chain Connectivity — Bridge Volume (Monthly)",
-    "Total bridge volume (USD billions), plus net flow (in-minus-out)."
+    "6. Cross-Chain Connectivity — Bridge Flows (Monthly)",
+    "Inflow and outflow (USD billions) with net flow overlay to reveal directionality of cross-chain liquidity."
 )
 
 if not df_bridge.empty:
-    total_peak = df_bridge["TOTAL_BRIDGE_VOLUME_BILLIONS"].max()
-    net_latest = df_bridge.sort_values("MONTH").iloc[-1]["NET_FLOW_BILLIONS"]
+    # Ensure numeric types (prevents “netflow = 0” due to strings)
+    num_cols = ["INFLOW_BILLIONS","OUTFLOW_BILLIONS","NET_FLOW_BILLIONS","TOTAL_BRIDGE_VOLUME_BILLIONS"]
+    for c in num_cols:
+        if c in df_bridge.columns:
+            df_bridge[c] = pd.to_numeric(df_bridge[c], errors="coerce")
+
+    dfb = df_bridge.sort_values("MONTH").copy()
+
+    # KPIs
+    peak_total = dfb["TOTAL_BRIDGE_VOLUME_BILLIONS"].max() if "TOTAL_BRIDGE_VOLUME_BILLIONS" in dfb else np.nan
+    net_latest = dfb["NET_FLOW_BILLIONS"].iloc[-1] if "NET_FLOW_BILLIONS" in dfb and len(dfb)>0 else np.nan
 
     c1, c2 = st.columns(2)
-    kpi_inline(c1, f"<strong>Peak Bridge Volume:</strong> <span class='v'>${total_peak:,.2f}B</span>", style=KPI_STYLE["green"])
-    kpi_inline(c2, f"<strong>Net Flow (latest):</strong> <span class='v'>{net_latest:,.2f}B</span>", style=KPI_STYLE["green"])
+    kpi_inline(c1, f"<strong>Peak Total Bridge Volume:</strong> <span class='v'>${peak_total:,.2f}B</span>", style=KPI_STYLE["green"])
+    kpi_inline(c2, f"<strong>Net Flow (latest):</strong> <span class='v'>{net_latest:,.2f}B</span>", style=KPI_STYLE["blue"])
 
-    fig6 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig6.add_trace(go.Scatter(x=df_bridge["MONTH"], y=df_bridge["TOTAL_BRIDGE_VOLUME_BILLIONS"],
-                              name="Total Bridge Volume (B)", mode="lines", line=dict(color="#10b981", width=3)))
-    fig6.add_trace(go.Bar(x=df_bridge["MONTH"], y=df_bridge["NET_FLOW_BILLIONS"],
-                          name="Net Flow (B)", marker_color="#a7f3d0"), secondary_y=True)
-    fig6.update_yaxes(title_text="Total Volume (B)", secondary_y=False)
-    fig6.update_yaxes(title_text="Net Flow (B)", secondary_y=True, showgrid=False)
-    fig6.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10), barmode="overlay")
+    # Chart: Inflow/Outflow bars + Net Flow line (all in billions)
+    fig6 = go.Figure()
+
+    # Bars
+    if "INFLOW_BILLIONS" in dfb:
+        fig6.add_bar(
+            x=dfb["MONTH"], y=dfb["INFLOW_BILLIONS"], name="Inflow (B)", marker_color="#10b981"  # green
+        )
+    if "OUTFLOW_BILLIONS" in dfb:
+        fig6.add_bar(
+            x=dfb["MONTH"], y=dfb["OUTFLOW_BILLIONS"], name="Outflow (B)", marker_color="#f59e0b"  # amber
+        )
+
+    # Net flow line (can be negative)
+    if "NET_FLOW_BILLIONS" in dfb:
+        fig6.add_trace(
+            go.Scatter(
+                x=dfb["MONTH"], y=dfb["NET_FLOW_BILLIONS"],
+                name="Net Flow (B)", mode="lines+markers",
+                line=dict(color="#1d4ed8", width=3)  # blue
+            )
+        )
+
+    # Zero reference line for net flow
+    fig6.add_hline(y=0, line_width=1, line_dash="dot", line_color="#94a3b8")
+
+    fig6.update_layout(
+        height=430, margin=dict(l=10, r=10, t=10, b=10),
+        barmode="group",
+        yaxis_title="Billions (USD)"
+    )
     st.plotly_chart(fig6, use_container_width=True)
 
-    insight("Bridge volume is trending higher. Further drill-down by source/destination would clarify where liquidity originates and settles.")
+    insight("Inflow vs outflow shows where liquidity is heading; the net flow overlay highlights regime shifts (net import vs export) beyond total volume levels.")
+else:
+    st.info("`data/bridged_volume.csv` missing required columns.")
 
 # -----------------------------------------------------------
 # 7) ETH Price Overlay with Activity Index
@@ -550,6 +584,7 @@ if not df_fees.empty:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
