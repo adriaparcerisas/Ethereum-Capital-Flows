@@ -568,7 +568,7 @@ alt.data_transformers.disable_max_rows()
 
 
 # 3A) Time series — Activity vs Fees & ETF flows
-st.markdown("**Chart A: Activity vs Fees & ETF flows**")
+st.markdown("<br>**Chart A: Activity vs Fees & ETF flows**")
 
 ts_cols = [c for c in ["MONTH","MONTH_DT","ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS"] if c in panel.columns]
 ts = panel[ts_cols].dropna(subset=["MONTH_DT"]).copy()
@@ -620,8 +620,7 @@ insight("Lower fees and positive ETF net flows tend to coincide with stronger ac
 #    "Fee Sensitivity — User Adoption During Fee Evolution",
 #    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
 #)
-st.markdown("**Chart B: User Adoption During Fee Evolution**")
-st.markdown("Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base.")
+st.markdown("<br>**Chart B: User Adoption During Fee Evolution:** Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base.")
 
 if not df_fees.empty:
     # collapse to monthly totals (if multiple FEE_CATEGORY rows)
@@ -662,8 +661,7 @@ insight("User growth accelerates when average fees compress. Spikes in fees are 
 #    "Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations."
 #)
 
-st.markdown("**Chart C: What Maps to Activity? — Driver vs Activity**")
-st.markdown("Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
+st.markdown("<br>**Chart C: What Maps to Activity? — Driver vs Activity**: Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
 
 
 # Human labels → (panel column, x-axis title, tooltip title)
@@ -897,7 +895,7 @@ else:
             st.caption("⚠️ Very few months of history, results fragile!")
 
         # --- Chart A: MCIS vs Activity (both z-scored)
-        st.markdown("**Chart A. MCIS vs Activity (z-scored)**")
+        st.markdown("<br>**Chart A. MCIS vs Activity (z-scored)**")
         line_df = pd.DataFrame({
             "MONTH": MCISz.index,
             "MCIS (z)": MCISz.values,
@@ -934,7 +932,7 @@ else:
         
         # --- Chart C: Regimes on ETH price
         if len(MCISz) >= 3:
-            st.markdown("**Chart B. ETH Price with MCIS Regimes**")
+            st.markdown("<br>**Chart B. ETH Price with MCIS Regimes**")
             st.caption("Shaded regions mark MCIS regimes: green (≥ +1σ tailwind) and red (≤ −1σ headwind). Useful to contextualize price runs with fundamentals vs. macro support.")
             
             reg_df = pd.DataFrame({
@@ -991,6 +989,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
