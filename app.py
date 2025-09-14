@@ -618,14 +618,36 @@ def _auto_read_csv(path: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 def _month_start(series) -> pd.Series:
-    """Normalize any date-like series to month start, tz-naive."""
-    dt = pd.to_datetime(series, errors="coerce", utc=True)
+    """Normalize any date-like series to month start, tz-naive. Accepts dd/mm/yyyy."""
+    dt = pd.to_datetime(series, errors="coerce", utc=True, dayfirst=True, infer_datetime_format=True)
     dt = dt.dt.tz_localize(None)
     return dt.dt.to_period("M").dt.to_timestamp()
 
+def _clean_number_like(x: str) -> str:
+    """Strip everything except digits, dot, minus, and comma; convert comma to dot."""
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return ""
+    s = str(x)
+    # remove percent sign and spaces
+    s = s.replace("%", "").replace(" ", "")
+    # parentheses usually mean negative; handle "(1.23)" -> "-1.23"
+    neg = s.startswith("(") and s.endswith(")")
+    # keep only digits . , and -
+    import re
+    s = "".join(re.findall(r"[0-9\.,\-]+", s))
+    s = s.replace(",", ".")
+    if neg and s and not s.startswith("-"):
+        s = "-" + s
+    return s
+
 def _coerce_num(s, default=np.nan):
-    """To numeric, tolerant."""
-    return pd.to_numeric(s, errors="coerce").fillna(default)
+    """To numeric, tolerant, using _clean_number_like first."""
+    if isinstance(s, (int, float, np.number)):
+        return pd.to_numeric(s, errors="coerce").fillna(default)
+    if isinstance(s, pd.Series):
+        s2 = s.map(_clean_number_like)
+        return pd.to_numeric(s2, errors="coerce").fillna(default)
+    return pd.to_numeric(_clean_number_like(s), errors="coerce")
 
 def _last_notna(series):
     """Last non-null value in a series; returns np.nan if none."""
@@ -733,20 +755,26 @@ def load_rates_expectations(path="data/rates_expectations.csv") -> pd.DataFrame:
         long["PROB"] = _coerce_num(long["PROB"])
         # Parse lower/upper from the bucket label
         def _parse_bounds(label):
-            # keep only digits and dot and dash
-            parts = str(label).replace("bps", "").replace("BPS", "").replace("%", "")
-            parts = parts.replace("to", "-").replace("–", "-").replace("—", "-")
-            parts = parts.split("-")
+            """
+            Parse a bucket label into (lower_bps, upper_bps).
+            Accepts forms like '(0.50–0.75)', '0.50-0.75', '425-450', '4.25–4.50 %', etc.
+            """
+            s = str(label)
+            # unify separators and strip junk
+            s = s.replace("to", "-").replace("–", "-").replace("—", "-")
+            # split
+            parts = s.split("-")
             if len(parts) != 2:
                 return np.nan, np.nan
-            def to_bps(x):
-                x = x.strip()
-                if not x:
+        
+            def to_bps(piece):
+                cleaned = _clean_number_like(piece)
+                if cleaned == "":
                     return np.nan
-                if x.find(".") >= 0:
-                    # percent -> bps
-                    return float(x) * 100.0
-                return float(x)
+                val = float(cleaned)
+                # if it's likely percent (<= 30), convert to bps. If it's already bps (hundreds+), keep.
+                return val * 100.0 if val <= 30 else val
+        
             lo = to_bps(parts[0])
             hi = to_bps(parts[1])
             return lo, hi
@@ -893,6 +921,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
