@@ -816,6 +816,179 @@ else:
             trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
             st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
 
+# ================================
+# 8C) Macro-Chain Impulse (MCIS)
+# ================================
+st.markdown("### 8C) Macro-Chain Impulse — composite driver of on-chain activity & price")
+
+need = {
+    "MONTH", "ACTIVITY_INDEX", "AVG_TX_FEE_USD",
+    "ETF_NET_FLOW_USD_MILLIONS", "RATES_PROB", "AVG_ETH_PRICE_USD"
+}
+if not need.issubset(panel.columns):
+    st.warning("MCIS: missing columns: " + ", ".join(sorted(need - set(panel.columns))))
+else:
+    df = panel.copy()
+
+    # --- build a monthly time index
+    if "MONTH_DT" in df.columns and pd.api.types.is_datetime64_any_dtype(df["MONTH_DT"]):
+        df = df.sort_values("MONTH_DT").set_index("MONTH_DT")
+    else:
+        mdt = pd.to_datetime(df["MONTH"], errors="coerce")
+        df = df.assign(MONTH_DT=mdt).sort_values("MONTH_DT").set_index("MONTH_DT")
+
+    # --- numeric coercion
+    y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
+    price = pd.to_numeric(df["AVG_ETH_PRICE_USD"], errors="coerce")
+    Xraw = pd.DataFrame({
+        "etf":  pd.to_numeric(df["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"),
+        "rate": pd.to_numeric(df["RATES_PROB"], errors="coerce"),
+        "fee":  pd.to_numeric(df["AVG_TX_FEE_USD"], errors="coerce")
+    }, index=df.index)
+
+    # --- choose lags (0..2) that maximize |corr| with activity
+    lags = {}
+    for col, sign in [("etf", +1), ("rate", +1), ("fee", -1)]:
+        best_lag, best_score = 0, -np.inf
+        for L in (0, 1, 2):
+            c = pd.concat([y, Xraw[col].shift(L)], axis=1).corr().iloc[0, 1]
+            if pd.notna(c):
+                score = abs(c * sign)
+                if score > best_score:
+                    best_score, best_lag = score, L
+        lags[col] = best_lag
+
+    # --- lag & make "all positive is good" by flipping fee
+    Xlag = pd.DataFrame({c: Xraw[c].shift(lags[c]) for c in Xraw.columns}, index=df.index)
+    Xlag["fee"] = -Xlag["fee"]
+
+    # --- standardize (z-scores)
+    Z = (Xlag - Xlag.mean()) / Xlag.std(ddof=0)
+    # align with activity target
+    data = pd.concat([Z, y.rename("y")], axis=1).dropna()
+    if len(data) < 12:
+        st.info("Not enough overlapping history to compute MCIS robustly.")
+    else:
+        Z = data[["etf", "rate", "fee"]]
+        y_aligned = data["y"]
+
+        # --- ridge weights with λ=1.0, non-negative & normalized
+        XtX = Z.T @ Z
+        lam = 1.0
+        w = np.linalg.solve(XtX + lam * np.eye(3), Z.T @ y_aligned)
+        weights = pd.Series(w, index=["etf", "rate", "fee"]).clip(lower=0)
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+        # MCIS time series on full (dropna) index
+        MCIS = (Z @ weights).rename("MCIS")
+        # z-normalize for interpretability
+        MCISz = (MCIS - MCIS.mean()) / MCIS.std(ddof=0)
+
+        # --- diagnostics
+        # next-month deltas/returns aligned to MCIS date
+        dy_next = y_aligned.shift(-1) - y_aligned
+        p_next = price.reindex(MCISz.index)
+        ret_next = p_next.pct_change().shift(-1)
+
+        # hit rate when MCIS>0
+        mask_pos = MCISz > 0
+        hit_rate = float((dy_next[mask_pos] > 0).mean()) if mask_pos.any() else np.nan
+
+        # correlation with next-month ETH return
+        corr_price = float(MCISz.corr(ret_next))
+
+        # current regime (last available)
+        current = MCISz.dropna().iloc[-1]
+        regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
+
+        # --- KPIs
+        k1 = f"{current:,.2f}"
+        k2 = f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—"
+        k3 = f"{corr_price:,.2f}" if pd.notna(corr_price) else "—"
+        k4 = " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("MCIS (z-score, latest)", k1, regime)
+        with c2:
+            st.metric("P(Activity ↑ next month | MCIS>0)", k2)
+        with c3:
+            st.metric("Corr(MCIS, next-month ETH return)", k3)
+        with c4:
+            st.metric("Weights (etf / rate / fee)", k4)
+
+        st.caption(
+            f"Lags discovered (months): ETF={lags['etf']}, RateProb={lags['rate']}, Fee={lags['fee']} "
+            "(fee inverted so ↑ is supportive). Ridge λ=1.0; weights ≥0 and normalized."
+        )
+
+        # --- Chart A: MCIS vs Activity (both z-scored)
+        line_df = pd.DataFrame({
+            "MONTH": MCISz.index,
+            "MCIS (z)": MCISz.values,
+            "Activity (z)": ((y_aligned - y_aligned.mean()) / y_aligned.std(ddof=0)).reindex(MCISz.index).values
+        }).dropna()
+        long_line = line_df.melt(id_vars="MONTH", var_name="Series", value_name="Value")
+        ch_line = (
+            alt.Chart(long_line)
+            .mark_line(strokeWidth=2)
+            .encode(
+                x=alt.X("MONTH:T", title="Month"),
+                y=alt.Y("Value:Q", title="z-score"),
+                color=alt.Color("Series:N", scale=alt.Scale(scheme="tableau20"))
+            )
+            .properties(height=320)
+        )
+        st.altair_chart(ch_line, use_container_width=True)
+
+        # --- Chart B: MCIS vs next-month ΔActivity (scatter + OLS)
+        sc_df = pd.DataFrame({
+            "MONTH": MCISz.index,
+            "MCIS": MCISz.values,
+            "DeltaActivityNext": dy_next.reindex(MCISz.index).values
+        }).dropna()
+        if len(sc_df) >= 6:
+            ch_sc = (
+                alt.Chart(sc_df)
+                .mark_circle(size=70, opacity=0.7)
+                .encode(
+                    x=alt.X("MCIS:Q", title="MCIS (z)"),
+                    y=alt.Y("DeltaActivityNext:Q", title="Next-month Δ Activity"),
+                    tooltip=[
+                        alt.Tooltip("MONTH:T", title="Month"),
+                        alt.Tooltip("MCIS:Q", title="MCIS", format=",.2f"),
+                        alt.Tooltip("DeltaActivityNext:Q", title="ΔActivity", format=",.2f"),
+                    ],
+                    color=alt.value("#0ea5e9"),
+                )
+            )
+            reg_sc = ch_sc.transform_regression("MCIS", "DeltaActivityNext").mark_line(color="#111827")
+            st.altair_chart((ch_sc + reg_sc).properties(height=320), use_container_width=True)
+        else:
+            st.info("Not enough points for the scatter/regression view.")
+
+        # --- Chart C: Regime shading on ETH price (MCIS > +1σ)
+        reg_df = pd.DataFrame({
+            "MONTH": MCISz.index,
+            "ETH_USD": p_next.values,
+            "MCIS": MCISz.values
+        }).dropna()
+        if len(reg_df) >= 6:
+            base = alt.Chart(reg_df).encode(x=alt.X("MONTH:T", title="Month"))
+            price_line = base.mark_line(strokeWidth=2, color="#111827").encode(
+                y=alt.Y("ETH_USD:Q", title="ETH price (USD)")
+            )
+            hi = base.transform_filter(alt.datum.MCIS >= 1.0).mark_rect(opacity=0.12, color="#16a34a").encode()
+            lo = base.transform_filter(alt.datum.MCIS <= -1.0).mark_rect(opacity=0.12, color="#ef4444").encode()
+            st.altair_chart((hi + lo + price_line).properties(height=300), use_container_width=True)
+
+        # --- Insight
+        st.markdown(
+            "- **Interpretation.** MCIS > 0 indicates a supportive backdrop (ETF demand + rate-cut odds – fees). "
+            "Historically in this sample, months with positive MCIS saw activity rise next month "
+            f"~**{k2}** of the time. Green shaded bands on the ETH price denote **MCIS ≥ +1σ** (strong tailwind)."
+        )
+
 
 
 # --- Insight line
@@ -843,6 +1016,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
