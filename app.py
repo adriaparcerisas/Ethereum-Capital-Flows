@@ -111,27 +111,35 @@ st.caption("Data as of most recent month available")
 
 st.markdown("""
 <div class="section">
-  <div class="section-title">Executive Summary: Ethereum’s On-Chain Traction</div>
+  <div class="section-title">Executive Summary: Assessing Ethereum’s Traction</div>
   <div class="section-def">
     <span class="def-pill">Context</span>
     <span>
-      This dashboard analyzes why Ethereum’s on-chain activity is surging and whether it is translating into price. The dashboard combines
-      throughput (USD volume), usage breadth (active addresses/transactions), execution costs (fees), and external demand signals
-      (ETF primary flows, policy-rate expectations). It finishes with a composite <strong>Macro-Chain Impulse Score (MCIS)</strong> to summarize
-      the net macro tailwind/headwind on activity and price.
-      <br><br>
-      <strong>August set a new all-time high in on-chain USD volume (~$341B)</strong> with activity broadening across sectors.
-      The rise coincided with <em>lower average fees</em> (improved affordability) and <em>positive ETF net flows</em> (exogenous demand).
-      These drivers line up with an uptick in a simple activity index and a constructive MCIS reading.
-      <br><br>
-      <strong>Key findings.</strong> (i) When fees compress and ETF net flows are positive, activity scales; (ii) rate-cut leaning months are
-      generally supportive risk-on regimes; (iii) activity and price tend to co-move, but MCIS helps distinguish durable demand
-      from temporary bursts. The panel can use this view to discuss the sustainability of the move and where capital/usage is concentrating.
+      This dashboard analyzes why Ethereum’s on-chain activity is surging and whether it is translating into price. 
+      It combines throughput (USD volume), usage breadth (active addresses/transactions), execution costs (fees), and 
+      external demand signals (ETF primary flows, policy-rate expectations). It concludes with a composite 
+      Macro-Chain Impulse Score (MCIS) to summarize the net macro tailwind/headwind on activity and price.<br><br>
+
+      <strong>August set a new all-time high in on-chain USD volume (~$341B)</strong> 
+      ([Crypto.com Research](https://crypto.com/us/research/research-roundup-sep-2025), 
+      [CryptoRank](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)), 
+      with activity broadening across sectors. The rise coincided with lower average fees (improved affordability) 
+      and positive ETF net flows (exogenous demand). These drivers align with an uptick in a simple activity index 
+      and a constructive MCIS reading.<br><br>
+
+      <strong>Key findings.</strong>  
+      (i) When fees compress and ETF net flows are positive, activity scales;  
+      (ii) rate-cut leaning months are generally supportive risk-on regimes;  
+      (iii) activity and price tend to co-move, but MCIS helps distinguish durable demand from temporary bursts.<br><br>
+
+      This view sets the stage for the panel discussion: the sustainability of the move, the durability of demand, 
+      and where capital and usage are concentrating across Ethereum’s ecosystem.
     </span>
   </div>
 </div>
 <hr class="sep">
 """, unsafe_allow_html=True)
+
 
 
 # -----------------------------------------------------------
@@ -545,9 +553,7 @@ draw_section(
     "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
     "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
     "Ethereum recently recorded <strong>all-time-high levels of on-chain activity</strong>, "
-    "marking one of the busiest months in its history "
-    "([Crypto.com Research, Sep 2025](https://crypto.com/us/research/research-roundup-sep-2025); "
-    "[CryptoRank, 2025](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)). "
+    "marking one of the busiest months in its history (see references at the end)."
     "This section investigates the <em>drivers</em> behind that surge — namely whether lower fees, stronger ETF inflows, "
     "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
 )
@@ -981,6 +987,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
