@@ -236,110 +236,87 @@ if not df_volcat.empty:
 
     insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 
-# -----------------------------------------------------------
-# 2) Monthly Active Addresses and Transactions by Sector (Toggle)
-# -----------------------------------------------------------
-draw_section(
-    "2. Monthly Active Addresses and Transactions by Sector",
-    "Choose one metric at a time to isolate user base (avg daily active addresses) vs network load (transactions)."
-)
+# ================================
+# 2) On-chain Activity & Fees
+# ================================
+st.markdown("### 2) On-chain Activity & Fees")
 
-if not df_active.empty:
-    # Expecting MONTH, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS
-    required = {"MONTH","SECTOR","AVG_DAILY_ACTIVE_ADDRESSES","TRANSACTIONS"}
-    missing = required - set(df_active.columns)
-    if missing:
-        st.warning(f"Active activity CSV missing columns: {', '.join(sorted(missing))}")
-    else:
-        # ❗ Merge NFT Transfers into Others (token transfers)
-        data = df_active.copy()
-        data["SECTOR"] = data["SECTOR"].replace({"NFT Transfers": "Others"})
-        # aggregate in case both 'Others' and 'NFT Transfers' existed for a month
-        data = (
-            data.groupby(["MONTH","SECTOR"], as_index=False)
-                .agg({
-                    "AVG_DAILY_ACTIVE_ADDRESSES": "sum",
-                    "TRANSACTIONS": "sum"
-                })
-                .sort_values(["MONTH","SECTOR"])
+need = {"MONTH", "ACTIVE_ADDR", "TX_COUNT", "AVG_TX_FEE_USD"}
+if not need.issubset(panel.columns):
+    st.warning("Section 2: missing columns: " + ", ".join(sorted(need - set(panel.columns))))
+else:
+    df2 = panel.copy()
+    df2 = df2.sort_values("MONTH_DT")
+
+    # Toggle for log scale
+    log_scale = st.checkbox("Show charts in log scale (Section 2)", value=False)
+
+    # Chart A: Active Addresses
+    st.markdown("**Chart A. Monthly Active Addresses**")
+    ch_addr = (
+        alt.Chart(df2)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("MONTH_DT:T", title="Month"),
+            y=alt.Y(
+                "ACTIVE_ADDR:Q",
+                title="Active Addresses",
+                scale=alt.Scale(type="log" if log_scale else "linear"),
+            ),
+            tooltip=[
+                alt.Tooltip("MONTH_DT:T", title="Month"),
+                alt.Tooltip("ACTIVE_ADDR:Q", format=",.0f"),
+            ],
+            color=alt.value("#0ea5e9"),
         )
+        .properties(height=300)
+    )
+    st.altair_chart(ch_addr, use_container_width=True)
 
-        # UI: metric toggle
-        metric = st.radio(
-            "Metric", options=["Avg Daily Active Addresses","Transactions"],
-            horizontal=True, index=0, key="active_metric"
+    # Chart B: Transactions
+    st.markdown("**Chart B. Monthly Transactions**")
+    ch_tx = (
+        alt.Chart(df2)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("MONTH_DT:T", title="Month"),
+            y=alt.Y(
+                "TX_COUNT:Q",
+                title="Transactions",
+                scale=alt.Scale(type="log" if log_scale else "linear"),
+            ),
+            tooltip=[
+                alt.Tooltip("MONTH_DT:T", title="Month"),
+                alt.Tooltip("TX_COUNT:Q", format=",.0f"),
+            ],
+            color=alt.value("#111827"),
         )
-        if metric == "Avg Daily Active Addresses":
-            y_col = "AVG_DAILY_ACTIVE_ADDRESSES"
-            kpi_style = KPI_STYLE["teal"]   # users
-        else:
-            y_col = "TRANSACTIONS"
-            kpi_style = KPI_STYLE["blue"]   # tx
+        .properties(height=300)
+    )
+    st.altair_chart(ch_tx, use_container_width=True)
 
-        latest = data["MONTH"].max()
-        d_last = data[data["MONTH"]==latest]
-
-        # KPIs
-        peak_val = data.groupby("MONTH")[y_col].sum().max()
-        c1, c2 = st.columns(2)
-        kpi_inline(
-            c1,
-            f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>",
-            style=kpi_style
+    # Chart C: Average Transaction Fee
+    st.markdown("**Chart C. Average Transaction Fee (USD)**")
+    ch_fee = (
+        alt.Chart(df2)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("MONTH_DT:T", title="Month"),
+            y=alt.Y(
+                "AVG_TX_FEE_USD:Q",
+                title="Average Fee (USD)",
+                scale=alt.Scale(type="log" if log_scale else "linear"),
+            ),
+            tooltip=[
+                alt.Tooltip("MONTH_DT:T", title="Month"),
+                alt.Tooltip("AVG_TX_FEE_USD:Q", format=",.4f"),
+            ],
+            color=alt.value("#ef4444"),
         )
+        .properties(height=300)
+    )
+    st.altair_chart(ch_fee, use_container_width=True)
 
-        dex_share = np.nan
-        if not d_last.empty and d_last[y_col].sum() > 0:
-            dex_share = 100 * d_last.loc[d_last["SECTOR"]=="DEX Trading", y_col].sum() / d_last[y_col].sum()
-        kpi_inline(
-            c2,
-            f"<strong>DEX Trading Share (latest):</strong> <span class='v'>{(0 if pd.isna(dex_share) else dex_share):,.1f}%</span>",
-            style=KPI_STYLE["blue"]
-        )
-
-        # Fixed order (without a separate NFT Transfers; it's merged into Others)
-        desired_order = [
-            "DEX Trading",
-            "Lending Deposits",
-            "Lending Borrows",
-            "NFT Sales",
-            "Others",  # includes NFT Transfers
-        ]
-        # Keep unexpected sectors (if any) at the end
-        seen = [s for s in desired_order if s in data["SECTOR"].unique()]
-        tail = [s for s in data["SECTOR"].unique() if s not in desired_order]
-        sectors_order = seen + tail
-
-        # Colors per sector
-        sector_colors = {
-            "DEX Trading": "#1d4ed8",       # blue
-            "Lending Deposits": "#10b981",  # green
-            "Lending Borrows": "#7c3aed",   # violet
-            "NFT Sales": "#f59e0b",         # amber
-            "Others": "#64748b",            # slate  (now includes NFT Transfers)
-        }
-
-        # Plot lines per sector
-        fig2 = go.Figure()
-        for sec in sectors_order:
-            d = data[data["SECTOR"]==sec].sort_values("MONTH")
-            if d.empty:
-                continue
-            fig2.add_trace(go.Scatter(
-                x=d["MONTH"], y=d[y_col], name=sec,
-                mode="lines+markers",
-                line=dict(width=2, color=sector_colors.get(sec, None))
-            ))
-        fig2.update_layout(
-            height=420, margin=dict(l=10, r=10, t=10, b=10),
-            yaxis_title=metric,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0)
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-
-        insight("Both active addresses and transactions have shown strong growth over time. "
-                "Among the sectors, 'Others' — mainly token transfers (now including NFT transfers) — "
-                "emerges as one of the fastest-growing categories, underscoring its central role in on-chain activity.")
 
 # -----------------------------------------------------------
 # 3) User Activity & Sector Breadth (Merged)
@@ -1109,6 +1086,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
