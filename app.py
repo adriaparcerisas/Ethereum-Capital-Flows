@@ -68,6 +68,7 @@ h1,h2,h3{margin:0 0 .3rem 0; font-weight:800;}
 # Helpers
 # -----------------------------------------------------------
 DATA_DIR = Path("data")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def read_csv(name: str, parse_month=True):
     fp = DATA_DIR / name
@@ -581,7 +582,6 @@ if not df_fees.empty:
 
 # ======================================================================
 # 8. Activity Drivers — Fees, ETF Flows & Rates Direction
-# (keep your existing "User Adoption During Fee Evolution" chart above)
 # ======================================================================
 
 import os
@@ -591,6 +591,26 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ---------- helpers ----------
+# --- Flexible CSV loader: auto-detect delimiter & normalize dates ---
+def read_csv_flex(path: str) -> pd.DataFrame:
+    """
+    Robust CSV reader that auto-detects delimiter (',' vs ';') and returns a DataFrame.
+    """
+    # Detect delimiter from a small sample
+    with open(path, "rb") as fh:
+        sample = fh.read(4096).decode("utf-8", errors="ignore")
+    sep = ";" if sample.count(";") > sample.count(",") else ","
+    # Read with detected separator
+    return pd.read_csv(path, sep=sep)
+
+def to_month_start(s: pd.Series) -> pd.Series:
+    """
+    Convert a date-like Series to month start (tz-naive).
+    Accepts strings or datetime-like values.
+    """
+    dt = pd.to_datetime(s, errors="coerce", utc=False)
+    return dt.dt.to_period("M").dt.to_timestamp()  # month start, tz-naive
+
 def month_start(dt_series: pd.Series) -> pd.Series:
     """Coerce to tz-naive month-start timestamps safely (no 'MS' freq)."""
     s = pd.to_datetime(dt_series, errors="coerce", utc=True)
@@ -626,126 +646,100 @@ def insight(txt: str):
         unsafe_allow_html=True,
     )
 
-# ---------- load core series we relate to ----------
-fees_price_path = os.path.join(DATA_DIR, "fees_price.csv")
-eth_price_path  = os.path.join(DATA_DIR, "eth_price.csv")
+# =========================
+# SECTION 8 DATA LOADING
+# =========================
+# Paths
+data_dir = os.path.join(BASE_DIR, "data")
+etf_path      = os.path.join(data_dir, "etf_flows.csv")
+rates_path    = os.path.join(data_dir, "rates_expectations.csv")
+fed_hist_path = os.path.join(data_dir, "fedfunds_history.csv")  # the file we generated/downloaded
 
-df_fees = pd.read_csv(fees_price_path) if os.path.exists(fees_price_path) else pd.DataFrame()
-df_eth  = pd.read_csv(eth_price_path)  if os.path.exists(eth_price_path)  else pd.DataFrame()
-
-core = pd.DataFrame()
-if not df_eth.empty:
-    df_eth["MONTH"] = month_start(df_eth["MONTH"])
-    core = df_eth[["MONTH", "ACTIVITY_INDEX"]].copy()
-
-if not df_fees.empty:
-    df_fees["MONTH"] = month_start(df_fees["MONTH"])
-    core = core.merge(
-        df_fees[["MONTH", "AVG_TX_FEE_USD"]], on="MONTH", how="outer"
-    ) if not core.empty else df_fees[["MONTH","AVG_TX_FEE_USD"]].copy()
-
-# ---------- ETF flows (supports daily or monthly file) ----------
-etf_path = os.path.join(DATA_DIR, "etf_flows.csv")  # your file
-etf_monthly = pd.DataFrame()
+# --- Load ETF flows (semicolon-safe) ---
+df_etf_raw = pd.DataFrame()
 if os.path.exists(etf_path):
-    raw = pd.read_csv(etf_path)
-    # guess columns
-    cols = {c.lower(): c for c in raw.columns}
-    # daily: expect a date-like column; monthly: expect 'MONTH'
-    possible_date_cols = [c for c in raw.columns if c.upper() in ("DATE","DAY","DT","OBS_DATE")]
-    if possible_date_cols:
-        dc = possible_date_cols[0]
-        raw["DATE"] = pd.to_datetime(raw[dc], errors="coerce", utc=True)
-        raw["MONTH"] = month_start(raw["DATE"])
-        # coerce value column
-        if "ETF_NET_FLOW_USD_MILLIONS" in raw.columns:
-            raw["ETF_NET_FLOW_USD_MILLIONS"] = pd.to_numeric(raw["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce")
-        else:
-            # try to find a numeric column if not named exactly
-            num_cols = [c for c in raw.columns if c != "MONTH" and raw[c].dtype != "O"]
-            if num_cols:
-                raw = raw.rename(columns={num_cols[0]: "ETF_NET_FLOW_USD_MILLIONS"})
-        etf_monthly = raw.groupby("MONTH", as_index=False)["ETF_NET_FLOW_USD_MILLIONS"].sum(min_count=1)
-    else:
-        # already monthly
-        if "MONTH" in raw.columns:
-            raw["MONTH"] = month_start(raw["MONTH"])
-            if "ETF_NET_FLOW_USD_MILLIONS" in raw.columns:
-                raw["ETF_NET_FLOW_USD_MILLIONS"] = pd.to_numeric(raw["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce")
-                etf_monthly = raw[["MONTH","ETF_NET_FLOW_USD_MILLIONS"]].copy()
+    df_etf_raw = read_csv_flex(etf_path)
 
-# ---------- Rates: expectations + current FedFunds history ----------
-rates_path = os.path.join(DATA_DIR, "rates_expectations.csv")
-fedhist_path = os.path.join(DATA_DIR, "fedfunds_history.csv")
+df_etf = pd.DataFrame()
+if not df_etf_raw.empty:
+    # Accept either 'MONTH' or any date-like column; keep only net flow column
+    month_col = None
+    for c in df_etf_raw.columns:
+        cu = c.strip().upper()
+        if cu in ("MONTH", "DATE", "DAY"):
+            month_col = c
+            break
+    val_col = None
+    for c in df_etf_raw.columns:
+        cu = c.strip().upper()
+        if cu in ("ETF_NET_FLOW_USD_MILLIONS", "NET_FLOW_USD_MILLIONS", "NET_FLOWS_USD_MILLIONS"):
+            val_col = c
+            break
 
-rates_dir = pd.DataFrame()
+    if month_col and val_col:
+        tmp = df_etf_raw[[month_col, val_col]].copy()
+        tmp["MONTH"] = to_month_start(tmp[month_col])
+        tmp["ETF_NET_FLOW_M"] = pd.to_numeric(tmp[val_col], errors="coerce")
+        df_etf = tmp[["MONTH", "ETF_NET_FLOW_M"]].dropna(subset=["MONTH"])
+
+# --- Load rates expectations (semicolon-safe) ---
+df_rates_raw = pd.DataFrame()
 if os.path.exists(rates_path):
-    r = pd.read_csv(rates_path)
-    # first column is date
-    r.columns = [str(c) for c in r.columns]
-    r.rename(columns={r.columns[0]: "DATE"}, inplace=True)
-    r["DATE"] = pd.to_datetime(r["DATE"], errors="coerce", utc=True)
-    r["MONTH"] = month_start(r["DATE"])
+    df_rates_raw = read_csv_flex(rates_path)
 
-    # melt probability buckets (e.g., "425-450", "450-475", ... in bps)
-    prob_cols = [c for c in r.columns if c not in ("DATE","MONTH")]
-    long_r = r.melt(id_vars=["DATE","MONTH"], value_vars=prob_cols, var_name="BUCKET", value_name="PROB")
-    # clean probs
-    long_r["PROB"] = pd.to_numeric(long_r["PROB"], errors="coerce")
-    # parse bucket to lower/upper bps if possible
-    def parse_bucket(b):
-        try:
-            lo, hi = b.split("-")
-            return float(lo), float(hi)
-        except Exception:
-            return np.nan, np.nan
-    tmp = long_r["BUCKET"].apply(parse_bucket).apply(pd.Series)
-    long_r["LOWER_BPS"] = tmp[0]; long_r["UPPER_BPS"] = tmp[1]
-    long_r["MIDPOINT_BPS"] = (long_r["LOWER_BPS"] + long_r["UPPER_BPS"]) / 2
+df_rates = pd.DataFrame()
+if not df_rates_raw.empty:
+    # Expected cols: DATE, LOWER_BPS, UPPER_BPS, PROB
+    col_map = {}
+    for c in df_rates_raw.columns:
+        cu = c.strip().upper()
+        if cu in ("DATE", "DAY", "MONTH") and "DATE" not in col_map:
+            col_map["DATE"] = c
+        elif cu in ("LOWER_BPS", "LOWER_BOUND_BPS", "LOWER") and "LOWER_BPS" not in col_map:
+            col_map["LOWER_BPS"] = c
+        elif cu in ("UPPER_BPS", "UPPER_BOUND_BPS", "UPPER") and "UPPER_BPS" not in col_map:
+            col_map["UPPER_BPS"] = c
+        elif cu in ("PROB", "PROBABILITY", "PCT") and "PROB" not in col_map:
+            col_map["PROB"] = c
 
-    # month-mode: take the highest-probability bucket each month
-    idx = long_r.groupby("MONTH")["PROB"].idxmax()
-    month_mode = long_r.loc[idx, ["MONTH","PROB","MIDPOINT_BPS"]].rename(columns={"PROB":"MODE_PROB"})
+    needed = {"DATE", "LOWER_BPS", "UPPER_BPS", "PROB"}
+    if needed.issubset(col_map.keys()):
+        tmp = df_rates_raw[[col_map["DATE"], col_map["LOWER_BPS"], col_map["UPPER_BPS"], col_map["PROB"]]].copy()
+        tmp.rename(columns={
+            col_map["DATE"]: "DATE",
+            col_map["LOWER_BPS"]: "LOWER_BPS",
+            col_map["UPPER_BPS"]: "UPPER_BPS",
+            col_map["PROB"]: "PROB"
+        }, inplace=True)
+        tmp["MONTH"] = to_month_start(tmp["DATE"])
+        tmp["LOWER_BPS"] = pd.to_numeric(tmp["LOWER_BPS"], errors="coerce")
+        tmp["UPPER_BPS"] = pd.to_numeric(tmp["UPPER_BPS"], errors="coerce")
+        tmp["PROB"] = pd.to_numeric(tmp["PROB"], errors="coerce")
+        # choose mode bucket (highest probability) per MONTH
+        tmp = tmp.sort_values(["MONTH", "PROB"], ascending=[True, False])
+        df_rates = tmp.loc[tmp.groupby("MONTH")["PROB"].idxmax()].reset_index(drop=True)
 
-    # attach current effective funds rate per month (from history)
-    if os.path.exists(fedhist_path):
-        fh = pd.read_csv(fedhist_path)
-        fh["MONTH"] = month_start(fh["observation_date"])
-        fh["FEDFUNDS"] = pd.to_numeric(fh["FEDFUNDS"], errors="coerce")
-        month_mode = month_mode.merge(fh[["MONTH","FEDFUNDS"]], on="MONTH", how="left")
+# --- Load fed funds history (semicolon-safe) ---
+fed_hist = pd.DataFrame()
+if os.path.exists(fed_hist_path):
+    fed_hist = read_csv_flex(fed_hist_path)
+    if set(["observation_date", "FEDFUNDS"]).issubset(set(fed_hist.columns)):
+        fed_hist["MONTH"] = to_month_start(fed_hist["observation_date"])
+        fed_hist["FEDFUNDS"] = pd.to_numeric(fed_hist["FEDFUNDS"], errors="coerce")
+        fed_hist = fed_hist[["MONTH", "FEDFUNDS"]]
 
-    # infer direction from midpoint vs fedfunds
-    def dir_from_mid(mid, ff):
-        if pd.isna(mid) or pd.isna(ff): 
-            return "HOLD", 0
-        if mid > ff + 1e-9: 
-            return "HIKE", 1
-        if mid < ff - 1e-9: 
-            return "CUT", -1
-        return "HOLD", 0
-
-    out = []
-    for _, row in month_mode.iterrows():
-        label, sign = dir_from_mid(row.get("MIDPOINT_BPS"), row.get("FEDFUNDS"))
-        out.append((row["MONTH"], label, sign, row.get("MODE_PROB", np.nan)))
-    rates_dir = pd.DataFrame(out, columns=["MONTH","DIRECTION","SIGN","MODE_PROB"])
-
-# ---------- merge drivers panel ----------
+# --- Compose a merged panel (optional, if you like joining) ---
 pieces = []
-if not core.empty:        pieces.append(core)
-if not etf_monthly.empty: pieces.append(etf_monthly)
-if not rates_dir.empty:   pieces.append(rates_dir)
+if not df_etf.empty:
+    pieces.append(df_etf)
+if not df_rates.empty:
+    pieces.append(df_rates[["MONTH", "LOWER_BPS", "UPPER_BPS", "PROB"]])
+if not fed_hist.empty:
+    pieces.append(fed_hist)
 
-panel = None
+panel8 = None
 for d in pieces:
-    panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
-if panel is None:
-    draw_section(
-        "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
-        "Data not found. Ensure these exist under /data: eth_price.csv, fees_price.csv, etf_flows.csv, rates_expectations.csv, fedfunds_history.csv."
-    )
-else:
-    panel = panel.sort_values("MONTH").reset_index(drop=True)
+    panel8 = d if panel8 is None else panel8.merge(d, on="MONTH", how="outer")
 
     # ---------- KPIs ----------
     latest = panel["MONTH"].max()
@@ -859,6 +853,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
