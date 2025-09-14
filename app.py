@@ -115,30 +115,22 @@ st.markdown("""
   <div class="section-def">
     <span class="def-pill">Context</span>
     <span>
-      This dashboard analyzes why Ethereum’s on-chain activity is surging and whether it is translating into price. 
-      It combines throughput (USD volume), usage breadth (active addresses/transactions), execution costs (fees), and 
-      external demand signals (ETF primary flows, policy-rate expectations). It concludes with a composite 
-      Macro-Chain Impulse Score (MCIS) to summarize the net macro tailwind/headwind on activity and price.<br><br>
+This dashboard analyzes why Ethereum’s on-chain activity is surging and whether it is translating into price. It combines throughput (USD volume), usage breadth (active addresses/transactions), execution costs (fees), and external demand signals (ETF primary flows, policy-rate expectations). It concludes with a composite Macro-Chain Impulse Score (MCIS) to summarize the net macro tailwind/headwind on activity and price.<br><br>
 
-      <strong>August set a new all-time high in on-chain USD volume (~$341B)</strong>
-      ([Crypto.com Research](https://crypto.com/us/research/research-roundup-sep-2025), 
-      [CryptoRank](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)), 
-      with activity broadening across sectors. The rise coincided with lower average fees (improved affordability) 
-      and positive ETF net flows (exogenous demand). These drivers align with an uptick in a simple activity index 
-      and a constructive MCIS reading.<br><br>
+<strong>August set a new all-time high in on-chain USD volume (~$341B)</strong> (<a href="https://crypto.com/us/research/research-roundup-sep-2025" target="_blank" rel="noopener">Crypto.com Research</a>, <a href="https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history" target="_blank" rel="noopener">CryptoRank</a>), with activity broadening across sectors. The rise coincided with lower average fees (improved affordability) and positive ETF net flows (exogenous demand). These drivers align with an uptick in a simple activity index and a constructive MCIS reading.<br><br>
 
-      <strong>Key findings.</strong>
-      (i) When fees compress and ETF net flows are positive, activity scales;  
-      (ii) rate-cut leaning months are generally supportive risk-on regimes;  
-      (iii) activity and price tend to co-move, but MCIS helps distinguish durable demand from temporary bursts.<br><br>
+<strong>Key findings.</strong><br>
+(i) When fees compress and ETF net flows are positive, activity scales;<br>
+(ii) rate-cut-leaning months are generally supportive risk-on regimes; and<br>
+(iii) activity and price tend to co-move, but MCIS helps distinguish durable demand from temporary bursts.<br><br>
 
-      This view sets the stage for the panel discussion: the sustainability of the move, the durability of demand, 
-      and where capital and usage are concentrating across Ethereum’s ecosystem.
+This view sets the stage for the panel discussion: the sustainability of the move, the durability of demand, and where capital and usage are concentrating across Ethereum’s ecosystem.
     </span>
   </div>
 </div>
 <hr class="sep">
 """, unsafe_allow_html=True)
+
 
 
 
@@ -987,6 +979,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
