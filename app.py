@@ -773,14 +773,21 @@ for col in ["Activity Index","Avg Tx Fee (USD)","ETF Net Flow (M)","RATES_SCORE"
 # ---------- KPIs ----------
 def _kpi_card(label, val, suffix=""):
     v = "—"
-    if val is not None and np.isfinite(val):
-        if isinstance(val, (int,float)):
-            if abs(val) >= 1e9:  v = f"{val/1e9:.2f}B"
-            elif abs(val) >= 1e6: v = f"{val/1e6:.2f}M"
-            elif abs(val) >= 1e3: v = f"{val/1e3:.2f}K"
-            else: v = f"{val:.2f}"
-        else:
-            v = str(val)
+    try:
+        num = float(val)
+        if np.isfinite(num):
+            if abs(num) >= 1e9:
+                v = f"{num/1e9:.2f}B"
+            elif abs(num) >= 1e6:
+                v = f"{num/1e6:.2f}M"
+            elif abs(num) >= 1e3:
+                v = f"{num/1e3:.2f}K"
+            else:
+                v = f"{num:.2f}"
+    except Exception:
+        if isinstance(val, str):
+            v = val  # allow strings like "CUT (65%)"
+
     st.markdown(
         f"""
 <div style="
@@ -793,13 +800,14 @@ def _kpi_card(label, val, suffix=""):
         unsafe_allow_html=True,
     )
 
+# Get latest row
 latest_row = plot_df.dropna(subset=["MONTH"]).iloc[-1]
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     _kpi_card("Activity Index (latest)", latest_row.get("Activity Index", np.nan))
 with c2:
-    _kpi_card("Avg Tx Fee (USD)", latest_row.get("Avg Tx Fee (USD)", np.nan), suffix="")
+    _kpi_card("Avg Tx Fee (USD)", latest_row.get("Avg Tx Fee (USD)", np.nan))
 with c3:
     _kpi_card("ETF Net Flow", latest_row.get("ETF Net Flow (M)", np.nan), suffix="M")
 with c4:
@@ -886,6 +894,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
