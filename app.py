@@ -120,14 +120,14 @@ st.markdown("""
       external demand signals (ETF primary flows, policy-rate expectations). It concludes with a composite 
       Macro-Chain Impulse Score (MCIS) to summarize the net macro tailwind/headwind on activity and price.<br><br>
 
-      August set a new all-time high in on-chain USD volume (~$341B)
+      <strong>August set a new all-time high in on-chain USD volume (~$341B)</strong>
       ([Crypto.com Research](https://crypto.com/us/research/research-roundup-sep-2025), 
       [CryptoRank](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)), 
       with activity broadening across sectors. The rise coincided with lower average fees (improved affordability) 
       and positive ETF net flows (exogenous demand). These drivers align with an uptick in a simple activity index 
       and a constructive MCIS reading.<br><br>
 
-      Key findings.
+      <strong>Key findings.</strong>
       (i) When fees compress and ETF net flows are positive, activity scales;  
       (ii) rate-cut leaning months are generally supportive risk-on regimes;  
       (iii) activity and price tend to co-move, but MCIS helps distinguish durable demand from temporary bursts.<br><br>
