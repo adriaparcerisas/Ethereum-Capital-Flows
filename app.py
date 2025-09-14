@@ -585,152 +585,142 @@ if not df_fees.empty:
 # SECTION 8 — Activity Drivers (Fees, ETFs, Rates)
 # =========================
 
+# ---------- utilities ----------
 import os
 
-def _month_start_naive(s):
-    # Any datetime-like -> month start, tz-naive
-    dt = pd.to_datetime(s, errors="coerce", utc=True)
-    return dt.dt.tz_convert("UTC").dt.tz_localize(None).dt.to_period("M").dt.to_timestamp(how="start")
-
 def _read_csv_auto(path):
-    """Robust CSV loader that auto-detects ; or , separators and trims cols."""
     if not os.path.exists(path):
         return pd.DataFrame()
+    # detect ; vs ,
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         head = f.read(2048)
     sep = ";" if head.count(";") > head.count(",") else ","
     df = pd.read_csv(path, sep=sep)
-    df.columns = [c.strip() for c in df.columns]
+    df.columns = [str(c).strip() for c in df.columns]
     return df
 
-# ---- Load fees/activity (you can reuse your existing source; this stays generic)
-# Expect a monthly series with columns: MONTH, Avg Tx Fee (USD)   (and optionally activity proxy)
+def _coerce_month_col(df):
+    """Find any plausible month/date column and build a tz-naive MONTH."""
+    if df.empty:
+        return df
+    candidates = [c for c in df.columns if c.upper() in ("MONTH","DATE","OBSERVATION_DATE")]
+    if not candidates:
+        # try fuzzy matches
+        for c in df.columns:
+            cu = c.upper()
+            if "MONTH" in cu or "DATE" in cu:
+                candidates.append(c); break
+    if not candidates:
+        # nothing we can do
+        return df
+    dc = candidates[0]
+    dt = pd.to_datetime(df[dc], errors="coerce", utc=True)
+    # month start, tz-naive
+    df["MONTH"] = dt.dt.tz_convert("UTC").dt.tz_localize(None).dt.to_period("M").dt.to_timestamp(how="start")
+    return df
+
+# ---------- FEES ----------
 fees_src = _read_csv_auto(os.path.join("data", "fees_activity.csv"))
+fees_src = _coerce_month_col(fees_src)
 if not fees_src.empty:
-    # Normalize MONTH
-    if "MONTH" in fees_src.columns:
-        fees_src["MONTH"] = _month_start_naive(fees_src["MONTH"])
-    elif "DATE" in fees_src.columns:
-        fees_src["MONTH"] = _month_start_naive(fees_src["DATE"])
-    # Standardize fee column name if needed
+    # find a fee column
     fee_col = None
     for c in fees_src.columns:
         cu = c.upper()
-        if "FEE" in cu and "AVG" in cu:
-            fee_col = c
-            break
+        if "FEE" in cu and ("AVG" in cu or "AVERAGE" in cu):
+            fee_col = c; break
     if fee_col is None and "Avg Tx Fee (USD)" in fees_src.columns:
         fee_col = "Avg Tx Fee (USD)"
-    if fee_col is None:
-        fees_src["Avg Tx Fee (USD)"] = np.nan
-    else:
-        fees_src["Avg Tx Fee (USD)"] = pd.to_numeric(fees_src[fee_col], errors="coerce")
-    fees_src = fees_src[["MONTH", "Avg Tx Fee (USD)"]].groupby("MONTH", as_index=False).mean()
+    fees_src["Avg Tx Fee (USD)"] = pd.to_numeric(fees_src.get(fee_col, np.nan), errors="coerce")
+    fees_src = fees_src[["MONTH","Avg Tx Fee (USD)"]].groupby("MONTH", as_index=False).mean()
 else:
-    fees_src = pd.DataFrame(columns=["MONTH", "Avg Tx Fee (USD)"])
+    fees_src = pd.DataFrame(columns=["MONTH","Avg Tx Fee (USD)"])
 
-# ---- Load ETF flows (monthly)
-# Columns expected: MONTH, ETF_NET_FLOW_USD_MILLIONS
+# ---------- ETF FLOWS ----------
 etf = _read_csv_auto(os.path.join("data", "etf_flows.csv"))
+etf = _coerce_month_col(etf)
 if not etf.empty:
-    if "MONTH" in etf.columns:
-        etf["MONTH"] = _month_start_naive(etf["MONTH"])
-    elif "DATE" in etf.columns:
-        etf["MONTH"] = _month_start_naive(etf["DATE"])
-    # map to expected name
+    # expected column ETF_NET_FLOW_USD_MILLIONS
     col = None
     for c in etf.columns:
         if c.strip().upper() == "ETF_NET_FLOW_USD_MILLIONS":
-            col = c
-            break
-    if col is None:
-        etf["ETF Net Flow (M)"] = np.nan
-    else:
-        etf["ETF Net Flow (M)"] = pd.to_numeric(etf[col], errors="coerce")
-    etf = etf[["MONTH", "ETF Net Flow (M)"]].groupby("MONTH", as_index=False).sum()
+            col = c; break
+    etf["ETF Net Flow (M)"] = pd.to_numeric(etf.get(col, np.nan), errors="coerce")
+    etf = etf[["MONTH","ETF Net Flow (M)"]].groupby("MONTH", as_index=False).sum()
 else:
-    etf = pd.DataFrame(columns=["MONTH", "ETF Net Flow (M)"])
+    etf = pd.DataFrame(columns=["MONTH","ETF Net Flow (M)"])
 
-# ---- Load rates expectations (daily buckets) and convert to a monthly “direction mode”
-# Expected columns: DATE, LOWER_BPS, UPPER_BPS, PROB
+# ---------- RATES (mode direction per month) ----------
 rates_raw = _read_csv_auto(os.path.join("data", "rates_expectations.csv"))
+rates_raw = _coerce_month_col(rates_raw)
+monthly_dir = pd.DataFrame(columns=["MONTH","RATES_MODE","RATES_MODE_PROB"])
 if not rates_raw.empty:
-    # Normalize types
-    rates_raw["DATE"] = pd.to_datetime(rates_raw["DATE"], errors="coerce", utc=True)
-    for ck in ("LOWER_BPS", "UPPER_BPS", "PROB"):
+    # clean numeric bucket fields if present
+    for ck in ("LOWER_BPS","UPPER_BPS","PROB"):
         if ck in rates_raw.columns:
             rates_raw[ck] = pd.to_numeric(rates_raw[ck], errors="coerce")
+    # build a daily top bucket if we actually have those cols; else fallback HOLD
+    has_bucket = all(c in rates_raw.columns for c in ("LOWER_BPS","UPPER_BPS","PROB"))
+    if has_bucket and "DATE" in rates_raw.columns:
+        # pick per-DATE bucket with highest PROB
+        top = (rates_raw.sort_values(["DATE","PROB"], ascending=[True,False])
+               .groupby("DATE", as_index=False).first())
+        top["MIDPOINT_BPS"] = (top["LOWER_BPS"] + top["UPPER_BPS"]) / 2.0
+        top = _coerce_month_col(top)
+
+        # attach monthly FedFunds (if available)
+        fed_hist = _read_csv_auto(os.path.join("data", "fedfunds_history.csv"))
+        fed_hist = _coerce_month_col(fed_hist)
+        if not fed_hist.empty and "FEDFUNDS" in fed_hist.columns:
+            fedm = fed_hist.groupby("MONTH", as_index=False)["FEDFUNDS"].last()
+            top = top.merge(fedm, on="MONTH", how="left")
         else:
-            rates_raw[ck] = np.nan
-    # Midpoint of bucket
-    rates_raw["MIDPOINT_BPS"] = (rates_raw["LOWER_BPS"] + rates_raw["UPPER_BPS"]) / 2.0
-    rates_raw["MONTH"] = _month_start_naive(rates_raw["DATE"])
-    # For each DATE pick the bucket with highest PROB
-    top_daily = (
-        rates_raw.sort_values(["DATE", "PROB"], ascending=[True, False])
-        .groupby("DATE", as_index=False).first()
-    )
-    # Direction vs the month's prevailing Fed Funds (you provided a monthly history file earlier)
-    # If you already merged FEDFUNDS elsewhere, skip; otherwise make a quick monthly proxy:
-    fed_hist = _read_csv_auto(os.path.join("data", "fedfunds_history.csv"))
-    if not fed_hist.empty and "FEDFUNDS" in fed_hist.columns:
-        fed_hist["observation_date"] = pd.to_datetime(fed_hist["observation_date"], errors="coerce", utc=True)
-        fed_hist["MONTH"] = _month_start_naive(fed_hist["observation_date"])
-        fedm = fed_hist.groupby("MONTH", as_index=False)["FEDFUNDS"].last()
-        top_daily = top_daily.merge(fedm, on="MONTH", how="left")
+            top["FEDFUNDS"] = np.nan
+
+        top["DIR"] = np.where(
+            top["MIDPOINT_BPS"] < top["FEDFUNDS"]*100 - 5, "CUT",
+            np.where(top["MIDPOINT_BPS"] > top["FEDFUNDS"]*100 + 5, "HIKE", "HOLD")
+        )
+        # monthly mode + probability proxy
+        def _mode_dir(g):
+            if g.empty: return pd.Series({"RATES_MODE": np.nan, "RATES_MODE_PROB": np.nan})
+            m = g["DIR"].mode(dropna=True)
+            mode = m.iloc[0] if not m.empty else np.nan
+            prob = float(g["PROB"].mean()) if "PROB" in g and pd.notna(g["PROB"].mean()) else np.nan
+            return pd.Series({"RATES_MODE": mode, "RATES_MODE_PROB": prob})
+        monthly_dir = top.groupby("MONTH").apply(_mode_dir).reset_index()
     else:
-        top_daily["FEDFUNDS"] = np.nan
+        # No bucket data → mark HOLD with NaN prob per month we see
+        monthly_dir = (rates_raw[["MONTH"]].drop_duplicates()
+                       .assign(RATES_MODE="HOLD", RATES_MODE_PROB=np.nan))
 
-    # Label direction by comparing MIDPOINT_BPS to that MONTH FedFunds (×100 to bps)
-    top_daily["DIR"] = np.where(
-        top_daily["MIDPOINT_BPS"] < top_daily["FEDFUNDS"] * 100 - 5, "CUT",
-        np.where(top_daily["MIDPOINT_BPS"] > top_daily["FEDFUNDS"] * 100 + 5, "HIKE", "HOLD")
-    )
+# ---------- Build a complete month backbone to avoid KeyErrors ----------
+# use any months we have from all sources
+months = pd.concat([
+    fees_src[["MONTH"]],
+    etf[["MONTH"]],
+    monthly_dir[["MONTH"]]
+], ignore_index=True).dropna().drop_duplicates().sort_values("MONTH")
 
-    # Monthly mode of direction and its probability (mean of the top-bucket prob as an OK proxy)
-    mode_map = {"CUT": -1, "HOLD": 0, "HIKE": 1}
-    rev_mode = {v: k for k, v in mode_map.items()}
-    monthly_dir = (top_daily
-        .groupby("MONTH")
-        .apply(lambda g: pd.Series({
-            "RATES_MODE": rev_mode[np.sign(g["DIR"].map(mode_map)).astype(int).mode(dropna=True).iloc[0]]
-                         if not g.empty else np.nan,
-            "RATES_MODE_PROB": float(g["PROB"].mean()) if pd.notna(g["PROB"].mean()) else np.nan
-        }))
-        .reset_index())
-else:
-    monthly_dir = pd.DataFrame(columns=["MONTH", "RATES_MODE", "RATES_MODE_PROB"])
+# ensure each df has MONTH, then merge on the backbone
+def _safe_merge(base, right, cols):
+    if right.empty or "MONTH" not in right.columns:
+        return base
+    keep = ["MONTH"] + [c for c in cols if c in right.columns]
+    return base.merge(right[keep], on="MONTH", how="left")
 
-# ---- Build an “Activity Index” (use your existing logic or fee-sourced proxy)
-# Here: simple smoothed index from normalized fees inverse (lower fees -> higher activity) + level adjustment
-panel = fees_src.merge(etf, on="MONTH", how="outer").merge(monthly_dir, on="MONTH", how="outer").sort_values("MONTH")
-panel["Avg Tx Fee (USD)"] = pd.to_numeric(panel["Avg Tx Fee (USD)"], errors="coerce")
-panel["ETF Net Flow (M)"] = pd.to_numeric(panel["ETF Net Flow (M)"], errors="coerce")
+panel = months.copy()
+panel = _safe_merge(panel, fees_src, ["Avg Tx Fee (USD)"])
+panel = _safe_merge(panel, etf, ["ETF Net Flow (M)"])
+panel = _safe_merge(panel, monthly_dir, ["RATES_MODE","RATES_MODE_PROB"])
 
-# Activity Index proxy: rescale fees to 0-1 then invert
+# build Activity Index (simple fee-inverse proxy)
 fee_min, fee_max = panel["Avg Tx Fee (USD)"].min(skipna=True), panel["Avg Tx Fee (USD)"].max(skipna=True)
 if np.isfinite(fee_min) and np.isfinite(fee_max) and fee_max > fee_min:
-    fee_z = 1 - (panel["Avg Tx Fee (USD)"] - fee_min) / (fee_max - fee_min)
+    z = 1 - (panel["Avg Tx Fee (USD)"] - fee_min)/(fee_max - fee_min)
+    panel["Activity Index"] = pd.Series(z).rolling(2, min_periods=1).mean()
 else:
-    fee_z = np.nan
-panel["Activity Index"] = pd.Series(fee_z).rolling(2, min_periods=1).mean()
-
-# ---- UI: header + definition (HTML, no literal **)
-st.markdown("### 8. Activity Drivers — Fees, ETF Flows & Rates Direction")
-st.markdown(
-    """
-<div style="background:#F3F7FF;border:1px solid #D8E3FF;border-radius:14px;padding:14px 16px;">
-  <span style="display:inline-block;background:#D8E3FF;color:#173A7A;font-weight:700;
-               padding:6px 10px;border-radius:999px;margin-right:8px;">
-    Definition
-  </span>
-  Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and 
-  <strong>policy direction</strong> to Ethereum’s on-chain activity. Rates direction is
-  inferred via the <strong>most probable bucket</strong> each month vs the month’s Fed Funds level.
-</div>
-""",
-    unsafe_allow_html=True,
-)
+    panel["Activity Index"] = np.nan
 
 # ---- KPIs (robust casting)
 def _kpi_card(label, val, suffix=""):
@@ -812,6 +802,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
