@@ -567,7 +567,9 @@ with c4:
 alt.data_transformers.disable_max_rows()
 
 
-# 8A) Time series — Activity vs Fees & ETF flows
+# 3A) Time series — Activity vs Fees & ETF flows
+st.markdown("**Chart A: Activity vs Fees & ETF flows**")
+
 ts_cols = [c for c in ["MONTH","MONTH_DT","ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS"] if c in panel.columns]
 ts = panel[ts_cols].dropna(subset=["MONTH_DT"]).copy()
 
@@ -612,12 +614,14 @@ insight("Lower fees and positive ETF net flows tend to coincide with stronger ac
 
 
 # -----------------------------------------------------------
-# 4) User Adoption During Fee Evolution
+# 3B) User Adoption During Fee Evolution
 # -----------------------------------------------------------
-draw_section(
-    "4) Fee Sensitivity — User Adoption During Fee Evolution",
-    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
-)
+#draw_section(
+#    "Fee Sensitivity — User Adoption During Fee Evolution",
+#    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
+#)
+st.markdown("**Chart B: User Adoption During Fee Evolution**")
+st.markdown("Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base.")
 
 if not df_fees.empty:
     # collapse to monthly totals (if multiple FEE_CATEGORY rows)
@@ -650,11 +654,17 @@ if not df_fees.empty:
 insight("User growth accelerates when average fees compress. Spikes in fees are typically followed by softer user growth, consistent with a price-of-blockspace constraint on mainstream adoption.")
 
 # -----------------------------------------------------------
-# ---- 5) Drivers vs Activity — interactive scatter + regression ----
+# ---- 3C) Drivers vs Activity — interactive scatter + regression ----
 # -----------------------------------------------------------
 
-st.markdown("### 5) What Maps to Activity? — Driver vs Activity (interactive)")
-st.caption("Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
+#draw_section(
+#    "3C) What Maps to Activity? — Driver vs Activity",
+#    "Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations."
+#)
+
+st.markdown("**Chart C: What Maps to Activity? — Driver vs Activity**")
+st.markdown("Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
+
 
 # Human labels → (panel column, x-axis title, tooltip title)
 driver_options = {
@@ -712,10 +722,10 @@ insight("The slope quantifies sensitivity. Negative slope for fees (cheaper → 
 
 
 # -----------------------------------------------------------
-# 6) ETH Price Overlay with Activity Index
+# 4) ETH Price Overlay with Activity Index
 # -----------------------------------------------------------
 draw_section(
-    "6) Price Linkage — ETH Price vs Activity Index",
+    "4) Price Linkage — ETH Price vs Activity Index",
     "Compares average ETH price (USD) to a composite activity index. Co-movement suggests fundamental participation; divergences can flag speculative or efficiency phases."
 )
 
@@ -748,11 +758,13 @@ insight("Price and activity generally co-move. Short stretches of divergence oft
 
 
 # ================================
-# 7) Macro-Chain Impulse (MCIS)
+# 5) Macro-Chain Impulse (MCIS)
 # ================================
-st.markdown("### 7) Macro-Chain Impulse (MCIS) — composite driver of on-chain activity & price")
 
-st.caption("MCIS z-scores and stacks three standardized drivers with small lags: +ETF net flows, +rate-cut probability, and −fees (made positive). Weights are ridge-estimated with a 5% per-factor floor and renormalization.")
+draw_section(
+    "5) Macro-Chain Impulse (MCIS) — composite driver of on-chain activity & price",
+    "MCIS z-scores and stacks three standardized drivers with small lags: +ETF net flows, +rate-cut probability, and −fees (made positive). Weights are ridge-estimated with a 5% per-factor floor and renormalization."
+)
 
 need = {
     "MONTH", "ACTIVITY_INDEX", "AVG_TX_FEE_USD",
@@ -979,6 +991,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
