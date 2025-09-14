@@ -661,21 +661,86 @@ df_etf = df_etf.dropna(subset=["MONTH"])
 etf_col = next((c for c in df_etf.columns if c.upper()=="ETF_NET_FLOW_USD_MILLIONS"), None)
 df_etf = df_etf[["MONTH", etf_col]].rename(columns={etf_col:"ETF_NET_FLOW_USD_MILLIONS"}) if etf_col else pd.DataFrame(columns=["MONTH","ETF_NET_FLOW_USD_MILLIONS"])
 
-# ---- rates expectations + fed funds history
-rates = _read_csv_smart(os.path.join("data","rates_expectations.csv"),
-                        expected_cols=["LOWER_BPS","UPPER_BPS","PROB"])
-dcol = "MONTH" if "MONTH" in rates.columns else ("DATE" if "DATE" in rates.columns else None)
-rates["MONTH"] = _month_start(rates[dcol]) if dcol else pd.NaT
-rates = rates.dropna(subset=["MONTH"])
-if "PROB" in rates.columns:
-    p95 = np.nanpercentile(rates["PROB"].dropna(), 95) if rates["PROB"].notna().any() else np.nan
-    if pd.notna(p95) and p95 > 1.5: rates["PROB"] = rates["PROB"]/100.0
-rates["MIDPOINT_BPS"] = np.where(
-    set(["LOWER_BPS","UPPER_BPS"]).issubset(rates.columns),
-    (rates["LOWER_BPS"].astype(float)+rates["UPPER_BPS"].astype(float))/2.0,
-    np.nan
-)
+# ---- rates expectations + fed funds history (robust)
+rates_raw = _read_csv_smart(os.path.join("data","rates_expectations.csv"))
+# standardize month
+if not rates_raw.empty:
+    if "MONTH" in rates_raw.columns:
+        rates_raw["MONTH"] = _month_start(rates_raw["MONTH"])
+    elif "DATE" in rates_raw.columns:
+        rates_raw["MONTH"] = _month_start(rates_raw["DATE"])
+    else:
+        # try any column that looks like a date
+        cand = next((c for c in rates_raw.columns if "date" in c.lower() or "month" in c.lower()), None)
+        rates_raw["MONTH"] = _month_start(rates_raw[cand]) if cand else pd.NaT
+    rates_raw = rates_raw.dropna(subset=["MONTH"])
 
+# normalize probability column (PROB or PROBABILITY)
+if "PROB" in rates_raw.columns:
+    prob_col = "PROB"
+elif "PROBABILITY" in rates_raw.columns:
+    prob_col = "PROBABILITY"
+else:
+    prob_col = None
+
+if prob_col:
+    p = pd.to_numeric(rates_raw[prob_col]
+                      .astype(str)
+                      .str.replace("%","",regex=False)
+                      .str.replace(",","",regex=False)
+                      .str.replace("(","-",regex=False)
+                      .str.replace(")","",regex=False), errors="coerce")
+    # scale to 0–1 if it looks like percentages
+    rates_raw["PROB"] = np.where(p > 1.5, p/100.0, p)
+else:
+    rates_raw["PROB"] = np.nan
+
+# compute MIDPOINT_BPS from whichever fields exist
+def _extract_midpoint_bps(row):
+    # direct numeric candidates
+    if "MIDPOINT_BPS" in row and pd.notna(row["MIDPOINT_BPS"]):
+        return pd.to_numeric(row["MIDPOINT_BPS"], errors="coerce")
+    if {"LOWER_BPS","UPPER_BPS"}.issubset(row.index) and pd.notna(row["LOWER_BPS"]) and pd.notna(row["UPPER_BPS"]):
+        lo = pd.to_numeric(row["LOWER_BPS"], errors="coerce")
+        hi = pd.to_numeric(row["UPPER_BPS"], errors="coerce")
+        return (lo + hi)/2.0 if pd.notna(lo) and pd.notna(hi) else np.nan
+    if "TARGET_BPS" in row and pd.notna(row["TARGET_BPS"]):
+        return pd.to_numeric(row["TARGET_BPS"], errors="coerce")
+    if "TARGET_PCT" in row and pd.notna(row["TARGET_PCT"]):
+        # 4.50 => 450 bps
+        val = pd.to_numeric(row["TARGET_PCT"], errors="coerce")
+        return val*100.0 if pd.notna(val) else np.nan
+    if "TARGET_RANGE" in row and isinstance(row["TARGET_RANGE"], str):
+        # parse things like "425-450", "4.25–4.50%", "4.25 to 4.50"
+        s = row["TARGET_RANGE"]
+        # keep digits, dot, dash
+        cleaned = "".join(ch if ch.isdigit() or ch in ".- " else " " for ch in s)
+        parts = [p for p in cleaned.replace("to"," ").replace("--","-").split() if p]
+        # find two numbers
+        nums = []
+        for p in parts:
+            try:
+                nums.append(float(p))
+            except:
+                pass
+        if len(nums) >= 2:
+            a, b = nums[0], nums[1]
+            # if values look like percentages (e.g., 4.25), convert to bps
+            if a < 50 and b < 50:
+                a, b = a*100.0, b*100.0
+            return (a + b)/2.0
+    return np.nan
+
+if not rates_raw.empty:
+    # ensure numeric where applicable
+    for c in ["LOWER_BPS","UPPER_BPS","MIDPOINT_BPS","TARGET_BPS","TARGET_PCT"]:
+        if c in rates_raw.columns:
+            rates_raw[c] = pd.to_numeric(rates_raw[c], errors="coerce")
+    rates_raw["MIDPOINT_BPS"] = rates_raw.apply(_extract_midpoint_bps, axis=1)
+else:
+    rates_raw["MIDPOINT_BPS"] = np.nan
+
+# load fed funds history
 fed = _read_csv_smart(os.path.join("data","fedfunds_history.csv"))
 if "observation_date" in fed.columns: fed["MONTH"] = _month_start(fed["observation_date"])
 elif "DATE" in fed.columns:           fed["MONTH"] = _month_start(fed["DATE"])
@@ -683,26 +748,33 @@ else:                                 fed["MONTH"] = pd.NaT
 fed["FEDFUNDS"] = pd.to_numeric(fed.get("FEDFUNDS", np.nan), errors="coerce")
 fed = fed.dropna(subset=["MONTH"]).sort_values("MONTH")
 
-if not rates.empty and not fed.empty:
-    rates = rates.merge(fed[["MONTH","FEDFUNDS"]], on="MONTH", how="left")
+# combine expectations with actual level to infer direction
+if not rates_raw.empty and not fed.empty:
+    rates = rates_raw.merge(fed[["MONTH","FEDFUNDS"]], on="MONTH", how="left")
+    # bps vs % sanity: FEDFUNDS is %, convert to bps for comparison
+    thresh = 5  # 5 bps tolerance
     rates["DIR"] = np.where(
-        rates["MIDPOINT_BPS"] < rates["FEDFUNDS"]*100 - 5, "Cut",
-        np.where(rates["MIDPOINT_BPS"] > rates["FEDFUNDS"]*100 + 5, "Hike", "Hold")
+        rates["MIDPOINT_BPS"] < rates["FEDFUNDS"]*100 - thresh, "Cut",
+        np.where(rates["MIDPOINT_BPS"] > rates["FEDFUNDS"]*100 + thresh, "Hike", "Hold")
     )
-    if "PROB" in rates.columns and rates["PROB"].notna().any():
+
+    # aggregate monthly probabilities to a single dir per month
+    if rates["PROB"].notna().any():
         prob = rates.groupby(["MONTH","DIR"], as_index=False)["PROB"].sum()
         prob["sum_m"] = prob.groupby("MONTH")["PROB"].transform("sum")
-        prob["PROB_NORM"] = np.where(prob["sum_m"]>0, prob["PROB"]/prob["sum_m"], np.nan)
+        prob["PROB_NORM"] = np.where(prob["sum_m"] > 0, prob["PROB"]/prob["sum_m"], np.nan)
         monthly_dir = prob.pivot(index="MONTH", columns="DIR", values="PROB_NORM").reset_index()
     else:
         ct = rates.groupby(["MONTH","DIR"], as_index=False).size()
         ct["sum_m"] = ct.groupby("MONTH")["size"].transform("sum")
-        ct["share"] = np.where(ct["sum_m"]>0, ct["size"]/ct["sum_m"], np.nan)
+        ct["share"] = np.where(ct["sum_m"] > 0, ct["size"]/ct["sum_m"], np.nan)
         monthly_dir = ct.pivot(index="MONTH", columns="DIR", values="share").reset_index()
+
     for c in ["Cut","Hold","Hike"]:
         if c not in monthly_dir.columns: monthly_dir[c] = 0.0
 else:
     monthly_dir = pd.DataFrame(columns=["MONTH","Cut","Hold","Hike"])
+
 
 # ---- unified panel (no KeyErrors if fee missing)
 panel = (
@@ -834,6 +906,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
