@@ -738,9 +738,10 @@ if not df_rates.empty:
 if not fed_hist.empty:
     pieces.append(fed_hist)
 
-panel8 = None
+panel = None
 for d in pieces:
-    panel8 = d if panel8 is None else panel8.merge(d, on="MONTH", how="outer")
+    panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
+
 
     # ---------- KPIs ----------
     latest = panel["MONTH"].max()
@@ -854,6 +855,7 @@ for d in pieces:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
