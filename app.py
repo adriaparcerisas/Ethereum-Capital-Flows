@@ -762,6 +762,25 @@ etf_bar = alt.Chart(ts).mark_bar(opacity=0.35, color="#10b981").encode(
 chart_ts = alt.layer(left, fee_line, etf_bar).resolve_scale(y="independent").properties(height=360)
 st.altair_chart(chart_ts, use_container_width=True)
 
+# --- Insight line
+insights = []
+if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]].corr().iloc[0,1]
+    if pd.notna(r): insights.append(f"Activity vs Fees corr: {r:+.2f} (usually negative).")
+if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]].corr().iloc[0,1]
+    if pd.notna(r): insights.append(f"Activity vs ETF Flows corr: {r:+.2f}.")
+if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]].corr().iloc[0,1]
+    if pd.notna(r): insights.append(f"Price vs Activity corr: {r:+.2f}.")
+
+st.markdown(
+    f"<div style='margin-top:4px;color:#374151;font-size:13px;'>"
+    f"<em>Insight.</em> {' '.join(insights) if insights else 'Drivers suggest lower fees and positive ETF net flows coincide with higher activity; activity is directionally consistent with price.'}"
+    f"</div>",
+    unsafe_allow_html=True,
+)
+
 # ---- 8B) Drivers vs Activity — interactive scatter + regression ----
 st.markdown("### 8B) Drivers vs Activity — what’s moving on-chain usage?")
 st.caption("Select a driver to compare against the Activity Index. The fitted line is an ordinary least squares trend.")
@@ -864,40 +883,32 @@ else:
 
     # --- standardize (z-scores)
     Z = (Xlag - Xlag.mean()) / Xlag.std(ddof=0)
-    # align with activity target
     data = pd.concat([Z, y.rename("y")], axis=1).dropna()
-    if len(data) < 12:
-        st.info("Not enough overlapping history to compute MCIS robustly.")
+
+    if len(data) < 3:
+        st.info("Too few overlapping months (<3) to compute MCIS.")
     else:
         Z = data[["etf", "rate", "fee"]]
         y_aligned = data["y"]
 
-        # --- ridge weights with λ=1.0, non-negative & normalized
+        # --- ridge weights with λ=1.0
         XtX = Z.T @ Z
         lam = 1.0
         w = np.linalg.solve(XtX + lam * np.eye(3), Z.T @ y_aligned)
         weights = pd.Series(w, index=["etf", "rate", "fee"]).clip(lower=0)
         if weights.sum() > 0:
             weights = weights / weights.sum()
-        # MCIS time series on full (dropna) index
         MCIS = (Z @ weights).rename("MCIS")
-        # z-normalize for interpretability
         MCISz = (MCIS - MCIS.mean()) / MCIS.std(ddof=0)
 
         # --- diagnostics
-        # next-month deltas/returns aligned to MCIS date
         dy_next = y_aligned.shift(-1) - y_aligned
         p_next = price.reindex(MCISz.index)
         ret_next = p_next.pct_change().shift(-1)
 
-        # hit rate when MCIS>0
-        mask_pos = MCISz > 0
-        hit_rate = float((dy_next[mask_pos] > 0).mean()) if mask_pos.any() else np.nan
-
-        # correlation with next-month ETH return
+        hit_rate = float((dy_next[MCISz > 0] > 0).mean()) if (MCISz > 0).any() else np.nan
         corr_price = float(MCISz.corr(ret_next))
 
-        # current regime (last available)
         current = MCISz.dropna().iloc[-1]
         regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
 
@@ -908,19 +919,13 @@ else:
         k4 = " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
 
         c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("MCIS (z-score, latest)", k1, regime)
-        with c2:
-            st.metric("P(Activity ↑ next month | MCIS>0)", k2)
-        with c3:
-            st.metric("Corr(MCIS, next-month ETH return)", k3)
-        with c4:
-            st.metric("Weights (etf / rate / fee)", k4)
+        with c1: st.metric("MCIS (z-score, latest)", k1, regime)
+        with c2: st.metric("P(Activity ↑ next month | MCIS>0)", k2)
+        with c3: st.metric("Corr(MCIS, next-month ETH return)", k3)
+        with c4: st.metric("Weights (etf / rate / fee)", k4)
 
-        st.caption(
-            f"Lags discovered (months): ETF={lags['etf']}, RateProb={lags['rate']}, Fee={lags['fee']} "
-            "(fee inverted so ↑ is supportive). Ridge λ=1.0; weights ≥0 and normalized."
-        )
+        if len(data) < 6:
+            st.caption("⚠️ Very few months of history, results fragile!")
 
         # --- Chart A: MCIS vs Activity (both z-scored)
         line_df = pd.DataFrame({
@@ -941,13 +946,13 @@ else:
         )
         st.altair_chart(ch_line, use_container_width=True)
 
-        # --- Chart B: MCIS vs next-month ΔActivity (scatter + OLS)
+        # --- Chart B: MCIS vs ΔActivity (needs ≥3 rows)
         sc_df = pd.DataFrame({
             "MONTH": MCISz.index,
             "MCIS": MCISz.values,
             "DeltaActivityNext": dy_next.reindex(MCISz.index).values
         }).dropna()
-        if len(sc_df) >= 6:
+        if len(sc_df) >= 3:
             ch_sc = (
                 alt.Chart(sc_df)
                 .mark_circle(size=70, opacity=0.7)
@@ -956,24 +961,22 @@ else:
                     y=alt.Y("DeltaActivityNext:Q", title="Next-month Δ Activity"),
                     tooltip=[
                         alt.Tooltip("MONTH:T", title="Month"),
-                        alt.Tooltip("MCIS:Q", title="MCIS", format=",.2f"),
-                        alt.Tooltip("DeltaActivityNext:Q", title="ΔActivity", format=",.2f"),
+                        alt.Tooltip("MCIS:Q", format=",.2f"),
+                        alt.Tooltip("DeltaActivityNext:Q", format=",.2f"),
                     ],
                     color=alt.value("#0ea5e9"),
                 )
             )
             reg_sc = ch_sc.transform_regression("MCIS", "DeltaActivityNext").mark_line(color="#111827")
             st.altair_chart((ch_sc + reg_sc).properties(height=320), use_container_width=True)
-        else:
-            st.info("Not enough points for the scatter/regression view.")
 
-        # --- Chart C: Regime shading on ETH price (MCIS > +1σ)
-        reg_df = pd.DataFrame({
-            "MONTH": MCISz.index,
-            "ETH_USD": p_next.values,
-            "MCIS": MCISz.values
-        }).dropna()
-        if len(reg_df) >= 6:
+        # --- Chart C: Regimes on ETH price
+        if len(MCISz) >= 3:
+            reg_df = pd.DataFrame({
+                "MONTH": MCISz.index,
+                "ETH_USD": p_next.values,
+                "MCIS": MCISz.values
+            }).dropna()
             base = alt.Chart(reg_df).encode(x=alt.X("MONTH:T", title="Month"))
             price_line = base.mark_line(strokeWidth=2, color="#111827").encode(
                 y=alt.Y("ETH_USD:Q", title="ETH price (USD)")
@@ -991,31 +994,12 @@ else:
 
 
 
-# --- Insight line
-insights = []
-if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]].corr().iloc[0,1]
-    if pd.notna(r): insights.append(f"Activity vs Fees corr: {r:+.2f} (usually negative).")
-if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]].corr().iloc[0,1]
-    if pd.notna(r): insights.append(f"Activity vs ETF Flows corr: {r:+.2f}.")
-if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]].corr().iloc[0,1]
-    if pd.notna(r): insights.append(f"Price vs Activity corr: {r:+.2f}.")
-
-st.markdown(
-    f"<div style='margin-top:4px;color:#374151;font-size:13px;'>"
-    f"<em>Insight.</em> {' '.join(insights) if insights else 'Drivers suggest lower fees and positive ETF net flows coincide with higher activity; activity is directionally consistent with price.'}"
-    f"</div>",
-    unsafe_allow_html=True,
-)
-
-
 # -----------------------------------------------------------
 # Footer
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
