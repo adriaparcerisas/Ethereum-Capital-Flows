@@ -602,7 +602,7 @@ if "kpi_card" not in globals():
         )
 
 def _to_month(s: pd.Series) -> pd.Series:
-    """Coerce to YYYY-MM (tz-naive)."""
+    """Coerce to 'YYYY-MM' (tz-naive)."""
     dt = pd.to_datetime(s, errors="coerce", utc=True).dt.tz_localize(None)
     return dt.dt.to_period("M").astype(str)
 
@@ -617,7 +617,7 @@ def _fmt_money_m(x):
         return "—"
     return f"${x:,.0f}M"
 
-# ---- Load drivers
+# ---- Load sources
 try:
     fees_p = pd.read_csv("data/fees_price.csv")
 except Exception:
@@ -632,7 +632,7 @@ rates_m = pd.read_csv("data/rates_expectations_monthly.csv")
 fed_m   = pd.read_csv("data/fedfunds_history_monthly.csv")
 
 # Normalize MONTH for all
-for df, col in [(etf_m,"MONTH"), (rates_m,"MONTH"), (fed_m,"MONTH"), (fees_p,"MONTH"), (eth_p,"MONTH")]:
+for df in [etf_m, rates_m, fed_m, fees_p, eth_p]:
     if not df.empty:
         if "MONTH" in df.columns:
             df["MONTH"] = _to_month(df["MONTH"])
@@ -653,7 +653,7 @@ if not eth_p.empty:
     keep_cols = [c for c in ["MONTH","ACTIVITY_INDEX","AVG_ETH_PRICE_USD"] if c in eth_p.columns]
     eth_p = eth_p[keep_cols].drop_duplicates("MONTH")
 
-# ETF flows (already monthly)
+# ETF flows (monthly sums)
 if "ETF_NET_FLOW_USD_MILLIONS" in etf_m.columns:
     etf_m = etf_m[["MONTH","ETF_NET_FLOW_USD_MILLIONS"]].groupby("MONTH", as_index=False).sum()
 else:
@@ -675,24 +675,29 @@ rates_m = rates_m[["MONTH","RATES_DIR","RATES_PROB"]].drop_duplicates("MONTH")
 
 # Merge panel on MONTH
 panel = None
-pieces = [eth_p, fees_p, etf_m, rates_m]
-for d in pieces:
+for d in [eth_p, fees_p, etf_m, rates_m]:
     if d is None or d.empty:
         continue
     panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
 
+# STOP if empty
 if panel is None or panel.empty:
     draw_section(
         "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
-        definition=("Relates <strong>transaction costs</strong>, <strong>ETF primary market flows</strong> and "
-                    "<strong>rate expectations</strong> to on-chain activity and price."),
+        definition=("Relates <strong>transaction costs</strong>, <strong>ETF primary flows</strong> and "
+                    "<strong>policy rate expectations</strong> to on-chain activity and ETH price."),
     )
     st.info("Data not found. Ensure these exist under /data: eth_price.csv, fees_price.csv, etf_flows_monthly.csv, rates_expectations_monthly.csv, fedfunds_history_monthly.csv.")
     st.stop()
 
-# Sort and coerce numerics
+# Sort, coerce, and drop September 2025+
 panel["MONTH_DT"] = pd.to_datetime(panel["MONTH"], format="%Y-%m", errors="coerce")
 panel = panel.sort_values("MONTH_DT")
+
+# EXCLUDE any data beyond 2025-08
+cutoff = pd.to_datetime("2025-08")
+panel = panel[panel["MONTH_DT"] <= cutoff]
+
 for c in ["ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS","AVG_ETH_PRICE_USD"]:
     if c in panel.columns:
         panel[c] = pd.to_numeric(panel[c], errors="coerce")
@@ -727,41 +732,32 @@ with c4:
         kpi_card("Rates Direction", "—", "#a78bfa")
 
 # --- Charts
-import altair as alt
 alt.data_transformers.disable_max_rows()
 
 # 8A) Time series — Activity vs Fees & ETF flows
 ts_cols = [c for c in ["MONTH","MONTH_DT","ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS"] if c in panel.columns]
 ts = panel[ts_cols].dropna(subset=["MONTH_DT"]).copy()
 
-left = alt.Chart(ts).mark_line(point=False).encode(
+left = alt.Chart(ts).mark_line(point=False, color="#0ea5e9").encode(
     x=alt.X("MONTH_DT:T", title="Month"),
     y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index", axis=alt.Axis(grid=True)),
-    tooltip=[alt.Tooltip("MONTH:N", title="Month"), alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity")]
+    tooltip=[alt.Tooltip("MONTH:N", title="Month"),
+             alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f")]
 )
 
-fee_line = alt.Chart(ts).mark_line(strokeDash=[4,3]).encode(
+fee_line = alt.Chart(ts).mark_line(strokeDash=[4,3], color="#f59e0b").encode(
     x="MONTH_DT:T",
     y=alt.Y("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
-    color=alt.value("#f59e0b"),
-    tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)")]
+    tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)", format=",.2f")]
 )
 
-etf_bar = alt.Chart(ts).mark_bar(opacity=0.35).encode(
+etf_bar = alt.Chart(ts).mark_bar(opacity=0.35, color="#10b981").encode(
     x="MONTH_DT:T",
     y=alt.Y("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
-    color=alt.value("#10b981"),
-    tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)")]
+    tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)", format=",.0f")]
 )
 
-chart_ts = alt.layer(
-    left.properties(color="#0ea5e9"),
-    fee_line,
-    etf_bar
-).resolve_scale(
-    y="independent"
-).properties(height=360)
-
+chart_ts = alt.layer(left, fee_line, etf_bar).resolve_scale(y="independent").properties(height=360)
 st.altair_chart(chart_ts, use_container_width=True)
 
 # 8B) What correlates with activity? (two panels)
@@ -772,10 +768,11 @@ colL, colR = st.columns(2)
 
 with colL:
     if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(corr_df.columns):
-        c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7).encode(
+        c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#f59e0b").encode(
             x=alt.X("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
             y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-            tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q","Fee"), alt.Tooltip("ACTIVITY_INDEX:Q","Activity")]
+            tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q","Fee", format=",.2f"),
+                     alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f")]
         )
         reg = c.transform_regression("AVG_TX_FEE_USD", "ACTIVITY_INDEX").mark_line(color="#111827")
         st.altair_chart((c + reg).properties(height=320), use_container_width=True)
@@ -787,8 +784,8 @@ with colR:
         c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#10b981").encode(
             x=alt.X("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
             y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-            tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q","ETF Flow (M)"),
-                     alt.Tooltip("ACTIVITY_INDEX:Q","Activity")]
+            tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q","ETF Flow (M)", format=",.0f"),
+                     alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f")]
         )
         reg = c.transform_regression("ETF_NET_FLOW_USD_MILLIONS", "ACTIVITY_INDEX").mark_line(color="#065f46")
         st.altair_chart((c + reg).properties(height=320), use_container_width=True)
@@ -801,7 +798,8 @@ if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
     c = alt.Chart(df_ap).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
         x=alt.X("ACTIVITY_INDEX:Q", title="Activity Index"),
         y=alt.Y("AVG_ETH_PRICE_USD:Q", title="ETH Price (USD)"),
-        tooltip=[alt.Tooltip("ACTIVITY_INDEX:Q","Activity"), alt.Tooltip("AVG_ETH_PRICE_USD:Q","Price")]
+        tooltip=[alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f"),
+                 alt.Tooltip("AVG_ETH_PRICE_USD:Q","Price", format=",.2f")]
     )
     reg = c.transform_regression("ACTIVITY_INDEX","AVG_ETH_PRICE_USD").mark_line(color="#1f2937")
     st.altair_chart((c + reg).properties(height=320), use_container_width=True)
@@ -812,7 +810,7 @@ else:
 insights = []
 if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
     r = panel[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]].corr().iloc[0,1]
-    if pd.notna(r): insights.append(f"Activity vs Fees corr: {r:+.2f} (typically negative).")
+    if pd.notna(r): insights.append(f"Activity vs Fees corr: {r:+.2f} (usually negative).")
 if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
     r = panel[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]].corr().iloc[0,1]
     if pd.notna(r): insights.append(f"Activity vs ETF Flows corr: {r:+.2f}.")
@@ -828,12 +826,12 @@ st.markdown(
 )
 
 
-
 # -----------------------------------------------------------
 # Footer
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
