@@ -913,16 +913,43 @@ else:
         regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
 
         # --- KPIs
-        k1 = f"{current:,.2f}"
-        k2 = f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—"
-        k3 = f"{corr_price:,.2f}" if pd.notna(corr_price) else "—"
-        k4 = " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
 
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: st.metric("MCIS (z-score, latest)", k1, regime)
-        with c2: st.metric("P(Activity ↑ next month | MCIS>0)", k2)
-        with c3: st.metric("Corr(MCIS, next-month ETH return)", k3)
-        with c4: st.metric("Weights (etf / rate / fee)", k4)
+                # --- KPIs with consistent style
+        metrics = [
+            {
+                "label": "MCIS (z-score, latest)",
+                "value": f"{current:,.2f}",
+                "delta": regime,
+            },
+            {
+                "label": "P(Activity ↑ next month | MCIS>0)",
+                "value": f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—",
+                "delta": None,
+            },
+            {
+                "label": "Corr(MCIS, next-month ETH return)",
+                "value": f"{corr_price:,.2f}" if pd.notna(corr_price) else "—",
+                "delta": None,
+            },
+            {
+                "label": "Weights (etf / rate / fee)",
+                "value": " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()]),
+                "delta": None,
+            },
+        ]
+
+        draw_metrics_row(metrics, cols=4)
+
+        #k1 = f"{current:,.2f}"
+        #k2 = f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—"
+        #k3 = f"{corr_price:,.2f}" if pd.notna(corr_price) else "—"
+        #k4 = " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
+
+        #c1, c2, c3, c4 = st.columns(4)
+        #with c1: st.metric("MCIS (z-score, latest)", k1, regime)
+        #with c2: st.metric("P(Activity ↑ next month | MCIS>0)", k2)
+        #with c3: st.metric("Corr(MCIS, next-month ETH return)", k3)
+        #with c4: st.metric("Weights (etf / rate / fee)", k4)
 
         if len(data) < 6:
             st.caption("⚠️ Very few months of history, results fragile!")
@@ -999,6 +1026,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
