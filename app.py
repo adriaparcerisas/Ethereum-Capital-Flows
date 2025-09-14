@@ -545,7 +545,7 @@ draw_section(
     "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
     "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
     "Ethereum recently recorded <strong>all-time-high levels of on-chain activity</strong>, "
-    "marking one of the busiest months in its history (see references at the end)."
+    "marking one of the busiest months in its history (see references at the end). "
     "This section investigates the <em>drivers</em> behind that surge — namely whether lower fees, stronger ETF inflows, "
     "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
 )
@@ -979,6 +979,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
