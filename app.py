@@ -770,8 +770,7 @@ st.caption("Select a driver to compare against the Activity Index. The fitted li
 driver_options = {
     "Avg Tx Fee (USD)": ("AVG_TX_FEE_USD", "Avg Tx Fee (USD)", "Fee (USD)"),
     "ETF Net Flow (USD M)": ("ETF_NET_FLOW_USD_MILLIONS", "ETF Net Flow (USD M)", "ETF Flow (M)"),
-    "Rates — Cut Probability (%)": ("PROB_CUT", "Cut Probability (%)", "Cut Prob (%)"),
-    "Rates — Hike Probability (%)": ("PROB_HIKE", "Hike Probability (%)", "Hike Prob (%)"),
+    "Rates — Cut Probability (%)": ("RATES_PROB", "Cut Probability (%)", "Cut Prob (%)"),
     "ETH Price (USD)": ("AVG_ETH_PRICE_USD", "ETH Price (USD)", "ETH Price (USD)"),
 }
 
@@ -786,7 +785,7 @@ if not set(need_cols).issubset(panel.columns):
 else:
     df_drv = panel[need_cols].copy()
 
-    # Coerce numeric just in case (avoids 'isfinite' and schema errors)
+    # Coerce numeric just in case
     df_drv[col_x] = pd.to_numeric(df_drv[col_x], errors="coerce")
     df_drv["ACTIVITY_INDEX"] = pd.to_numeric(df_drv["ACTIVITY_INDEX"], errors="coerce")
     df_drv = df_drv.dropna(subset=[col_x, "ACTIVITY_INDEX", "MONTH_DT"])
@@ -794,7 +793,6 @@ else:
     if df_drv.empty:
         st.info("No overlapping data points to plot.")
     else:
-        # Scatter + regression line
         scatter = alt.Chart(df_drv).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
             x=alt.X(f"{col_x}:Q", title=x_title),
             y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
@@ -809,7 +807,7 @@ else:
 
         st.altair_chart((scatter + reg).properties(height=340), use_container_width=True)
 
-        # Small textual cue: directionality over the last 3 months (if present)
+        # Recent 3-observation direction cue
         tail = df_drv.sort_values("MONTH_DT").tail(3)
         if len(tail) >= 2:
             dx = tail[col_x].iloc[-1] - tail[col_x].iloc[0]
@@ -817,6 +815,7 @@ else:
             trend_x = "↑" if dx > 0 else ("↓" if dx < 0 else "→")
             trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
             st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
+
 
 
 # --- Insight line
@@ -844,6 +843,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
