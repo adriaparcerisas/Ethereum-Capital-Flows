@@ -111,25 +111,28 @@ st.caption("Data as of most recent month available")
 
 st.markdown("""
 <div class="section">
-  <div class="section-title">Executive Summary: Assessing Ethereum’s Traction</div>
+  <div class="section-title">Executive Summary: Ethereum’s On-Chain Traction</div>
   <div class="section-def">
     <span class="def-pill">Context</span>
     <span>
-      This dashboard analyzes Ethereum’s on-chain capital flows and user dynamics across DeFi, bridges, and fees.
-      Metrics are sourced from canonical exports and designed for a crypto-savvy audience.<br><br>
-      <strong>August set a new all-time high for on-chain volume (~$341B)</strong>, eclipsing the 2021 peak.
-      Tailwinds included corporate treasury accumulation, stronger spot ETH ETF trading, and lower average fees
-      that enabled higher throughput. Protocol buybacks (≈$46M late August; Hyperliquid ≈$25M) supported prices
-      in volatility, though long-run impact depends on fundamentals and recurring revenue.<br><br>
-      The sections below track capital allocation, breadth vs. intensity of usage, execution costs, and cross-chain flows.
-      Pay particular attention to fee-sensitive adoption and to segments where capital concentration rises (DEXs, lending, bridges).
-      Results are intended for panel discussion: what’s driving throughput, which users are sticky, how costs affect adoption,
-      and where liquidity is migrating across chains and venues.
+      This dashboard analyzes why Ethereum’s on-chain activity is surging and whether it is translating into price. The dashboard combines
+      throughput (USD volume), usage breadth (active addresses/transactions), execution costs (fees), and external demand signals
+      (ETF primary flows, policy-rate expectations). It finishes with a composite <strong>Macro-Chain Impulse Score (MCIS)</strong> to summarize
+      the net macro tailwind/headwind on activity and price.
+      <br><br>
+      <strong>August set a new all-time high in on-chain USD volume (~$341B)</strong> with activity broadening across sectors.
+      The rise coincided with <em>lower average fees</em> (improved affordability) and <em>positive ETF net flows</em> (exogenous demand).
+      These drivers line up with an uptick in a simple activity index and a constructive MCIS reading.
+      <br><br>
+      <strong>Key findings.</strong> (i) When fees compress and ETF net flows are positive, activity scales; (ii) rate-cut leaning months are
+      generally supportive risk-on regimes; (iii) activity and price tend to co-move, but MCIS helps distinguish durable demand
+      from temporary bursts. The panel can use this view to discuss the sustainability of the move and where capital/usage is concentrating.
     </span>
   </div>
 </div>
 <hr class="sep">
 """, unsafe_allow_html=True)
+
 
 # -----------------------------------------------------------
 # Load data
@@ -234,7 +237,7 @@ if not df_volcat.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
+    insight("Throughput printed a new high in August (~$341B). Flow remains concentrated in DEXs and lending, while bridges and token transfers provide breadth. Mix helps read risk-on (DEX/lending heavy) vs. defensive rotations.")
 
 
 # -----------------------------------------------------------
@@ -338,12 +341,11 @@ if not df_active.empty:
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-        insight("Both active addresses and transactions have shown strong growth over time. "
-                "Among the sectors, 'Others' — mainly token transfers (now including NFT transfers) — "
-                "emerges as one of the fastest-growing categories, underscoring its central role in on-chain activity.")
+        insight("Breadth and load trend higher. ‘Others’ (token transfers, incl. NFT transfers) is among the fastest-growing segments, while DEX trading and lending remain the cyclical anchors of network demand.")
+
 
 # ================================
-# 8) Activity Drivers — Fees, ETF Flows & Rates Direction
+# 3) Activity Drivers — Fees, ETF Flows & Rates Direction
 # ================================
 import os, pandas as pd, numpy as np, altair as alt, streamlit as st
 
@@ -501,7 +503,7 @@ for d in [eth_p, fees_p, etf_m, rates_m]:
 # STOP if empty
 if panel is None or panel.empty:
     draw_section(
-        "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
+        "3. Activity Drivers — Fees, ETF Flows & Rates Direction",
         definition=("Relates <strong>transaction costs</strong>, <strong>ETF primary flows</strong> and "
                     "<strong>policy rate expectations</strong> to on-chain activity and ETH price."),
     )
@@ -530,12 +532,10 @@ k4_p   = latest["RATES_PROB"] if "RATES_PROB" in panel.columns else np.nan
 
 # --- Render section
 draw_section(
-    "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
-    definition=("Relates <strong>transaction costs</strong>, <strong>ETF primary flows</strong> and "
-                "<strong>policy rate expectations</strong> to on-chain activity and ETH price. "
-                "Lower fees & positive ETF flows have historically coincided with stronger activity; "
-                "rate-cut leaning months (per highest-probability bucket) tend to be supportive risk-on regimes."),
+    "3) Activity Drivers — Fees, ETF Flows & Rate Expectations",
+    "Relates <strong>execution costs</strong> (avg fee), <strong>exogenous demand</strong> (ETF net flows), and <strong>policy stance</strong> (cut probability / direction) to on-chain activity."
 )
+
 
 # KPIs
 c1, c2, c3, c4 = st.columns(4)
@@ -595,7 +595,8 @@ if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
 
 st.markdown(
     f"<div style='margin-top:4px;color:#374151;font-size:13px;'>"
-    f"<em>Insight.</em> {' '.join(insights) if insights else 'Drivers suggest lower fees and positive ETF net flows coincide with higher activity; activity is directionally consistent with price.'}"
+    f"<em>Insight.</em> Lower fees and positive ETF net flows tend to coincide with stronger activity. "
+    f"Policy leaning (cut vs. hold) is a secondary tailwind when aligned with cheap execution."
     f"</div>",
     unsafe_allow_html=True,
 )
@@ -603,12 +604,13 @@ st.markdown(
 
 
 
+
 # -----------------------------------------------------------
-# 8) User Adoption During Fee Evolution
+# 4) User Adoption During Fee Evolution
 # -----------------------------------------------------------
 draw_section(
-    "8. User Adoption During Fee Evolution",
-    "Overlay unique users (millions) with average fee (USD) to visualize fee-sensitive adoption."
+    "4) Fee Sensitivity — User Adoption During Fee Evolution",
+    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
 )
 
 if not df_fees.empty:
@@ -639,10 +641,14 @@ if not df_fees.empty:
     fig8.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig8, use_container_width=True)
 
+insight("User growth accelerates when average fees compress. Spikes in fees are typically followed by softer user growth, consistent with a price-of-blockspace constraint on mainstream adoption.")
 
-# ---- 8B) Drivers vs Activity — interactive scatter + regression ----
-st.markdown("### 8B) Drivers vs Activity — what’s moving on-chain usage?")
-st.caption("Select a driver to compare against the Activity Index. The fitted line is an ordinary least squares trend.")
+# -----------------------------------------------------------
+# ---- 5) Drivers vs Activity — interactive scatter + regression ----
+# -----------------------------------------------------------
+
+st.markdown("### 5) What Maps to Activity? — Driver vs Activity (interactive)")
+st.caption("Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
 
 # Human labels → (panel column, x-axis title, tooltip title)
 driver_options = {
@@ -694,14 +700,23 @@ else:
             trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
             st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
 
+st.markdown(
+    "<div style='color:#374151;font-size:13px; margin-top:4px;'>"
+    "<em>Insight.</em> The slope quantifies sensitivity. Negative slope for fees (cheaper → more activity) and positive slope for ETF net flows are consistent with Section 3."
+    "</div>",
+    unsafe_allow_html=True,
+)
+
+
 
 # -----------------------------------------------------------
-# 7) ETH Price Overlay with Activity Index
+# 6) ETH Price Overlay with Activity Index
 # -----------------------------------------------------------
 draw_section(
-    "7. ETH Price Overlay with Total Activity Index",
-    "Compare average ETH price (USD) with a composite activity index."
+    "6) Price Linkage — ETH Price vs Activity Index",
+    "Compares average ETH price (USD) to a composite activity index. Co-movement suggests fundamental participation; divergences can flag speculative or efficiency phases."
 )
+
 
 if not df_eth.empty:
     price_min, price_max = df_eth["AVG_ETH_PRICE_USD"].min(), df_eth["AVG_ETH_PRICE_USD"].max()
@@ -727,20 +742,15 @@ if not df_eth.empty:
     fig7.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig7, use_container_width=True)
 
-
-
-##
-##
-##
-
-
-
+insight("Price and activity generally co-move. Short stretches of divergence often resolve as fees normalize or as ETF flow direction stabilizes.")
 
 
 # ================================
-# 8C) Macro-Chain Impulse (MCIS)
+# 7) Macro-Chain Impulse (MCIS)
 # ================================
-st.markdown("### 8C) Macro-Chain Impulse — composite driver of on-chain activity & price")
+st.markdown("### 7) Macro-Chain Impulse (MCIS) — composite driver of on-chain activity & price")
+
+st.caption("MCIS z-scores and stacks three standardized drivers with small lags: +ETF net flows, +rate-cut probability, and −fees (made positive). Weights are ridge-estimated with a 5% per-factor floor and renormalization.")
 
 need = {
     "MONTH", "ACTIVITY_INDEX", "AVG_TX_FEE_USD",
@@ -899,11 +909,20 @@ else:
             "MCIS": MCISz.values,
             "DeltaActivityNext": dy_next.reindex(MCISz.index).values
         }).dropna()
+
+        st.markdown(
+            "- **Interpretation.** MCIS > 0 signals a supportive backdrop (ETF demand + policy ease − fees). "
+            "In sample, positive MCIS months are more likely to be followed by rising activity; the magnitude is summarized in the hit-rate KPI. "
+            "Weights indicate which driver is doing the heavy lifting currently."
+        )
+
         
         
         # --- Chart C: Regimes on ETH price
         if len(MCISz) >= 3:
-            st.markdown("**Chart C. ETH Price with MCIS Regimes**")
+            st.markdown("**ETH Price with MCIS Regimes**")
+            st.caption("Shaded regions mark MCIS regimes: green (≥ +1σ tailwind) and red (≤ −1σ headwind). Useful to contextualize price runs with fundamentals vs. macro support.")
+            
             reg_df = pd.DataFrame({
                 "MONTH": MCISz.index,
                 "ETH_USD": p_next.values,
@@ -934,6 +953,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
