@@ -1014,8 +1014,13 @@ else:
             },
             {
                 "label": "Weights (etf / rate / fee)",
-                "value": " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()]) if not weights.empty else "—",
+                "value": f"<span style='font-size:0.9em; color:#374151;'>"
+                         + " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
+                         + "</span>",
+                "delta": None,
+                "unsafe_allow_html": True,  # tell your renderer it's HTML
             },
+
         ]
         draw_metrics_row(metrics, cols=4)
 
@@ -1096,6 +1101,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
