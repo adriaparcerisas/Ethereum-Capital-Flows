@@ -593,15 +593,7 @@ if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
     r = panel[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]].corr().iloc[0,1]
     if pd.notna(r): insights.append(f"Price vs Activity corr: {r:+.2f}.")
 
-st.markdown(
-    f"<div style='margin-top:4px;color:#374151;font-size:13px;'>"
-    f"<em>Insight.</em> Lower fees and positive ETF net flows tend to coincide with stronger activity. "
-    f"Policy leaning (cut vs. hold) is a secondary tailwind when aligned with cheap execution."
-    f"</div>",
-    unsafe_allow_html=True,
-)
-
-
+insight("Lower fees and positive ETF net flows tend to coincide with stronger activity. Policy leaning (cut vs. hold) is a secondary tailwind when aligned with cheap execution.")
 
 
 
@@ -700,12 +692,8 @@ else:
             trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
             st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
 
-st.markdown(
-    "<div style='color:#374151;font-size:13px; margin-top:4px;'>"
-    "<em>Insight.</em> The slope quantifies sensitivity. Negative slope for fees (cheaper → more activity) and positive slope for ETF net flows are consistent with Section 3."
-    "</div>",
-    unsafe_allow_html=True,
-)
+
+insight("The slope quantifies sensitivity. Negative slope for fees (cheaper → more activity) and positive slope for ETF net flows are consistent with Section 3.")
 
 
 
@@ -920,7 +908,7 @@ else:
         
         # --- Chart C: Regimes on ETH price
         if len(MCISz) >= 3:
-            st.markdown("**ETH Price with MCIS Regimes**")
+            st.markdown("**Chart B. ETH Price with MCIS Regimes**")
             st.caption("Shaded regions mark MCIS regimes: green (≥ +1σ tailwind) and red (≤ −1σ headwind). Useful to contextualize price runs with fundamentals vs. macro support.")
             
             reg_df = pd.DataFrame({
@@ -953,6 +941,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
