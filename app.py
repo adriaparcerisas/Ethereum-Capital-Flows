@@ -1028,6 +1028,7 @@ else:
             st.caption("⚠️ Very few months of history, results fragile!")
 
         # --- Chart A: MCIS vs Activity (both z-scored)
+        st.markdown("**Chart A. MCIS vs Activity (z-scored)**")
         line_df = pd.DataFrame({
             "MONTH": MCISz.index,
             "MCIS (z)": MCISz.values,
@@ -1045,14 +1046,11 @@ else:
             .properties(height=320)
         )
         st.altair_chart(ch_line, use_container_width=True)
-
-        # --- Chart B: MCIS vs ΔActivity next month (with trend line)
-        sc_df = pd.DataFrame({
-            "MONTH": MCISz.index,
-            "MCIS": MCISz.values,
-            "DeltaActivityNext": dy_next.reindex(MCISz.index).values
-        }).dropna()
+        
+        
+        # --- Chart B: MCIS vs ΔActivity (needs ≥3 rows)
         if len(sc_df) >= 3:
+            st.markdown("**Chart B. MCIS vs Next-month ΔActivity**")
             ch_sc = (
                 alt.Chart(sc_df)
                 .mark_circle(size=70, opacity=0.7)
@@ -1069,9 +1067,11 @@ else:
             )
             reg_sc = ch_sc.transform_regression("MCIS", "DeltaActivityNext").mark_line(color="#111827")
             st.altair_chart((ch_sc + reg_sc).properties(height=320), use_container_width=True)
-
-        # --- Chart C: Regime shading on ETH price
+        
+        
+        # --- Chart C: Regimes on ETH price
         if len(MCISz) >= 3:
+            st.markdown("**Chart C. ETH Price with MCIS Regimes**")
             reg_df = pd.DataFrame({
                 "MONTH": MCISz.index,
                 "ETH_USD": p_next.values,
@@ -1081,9 +1081,10 @@ else:
             price_line = base.mark_line(strokeWidth=2, color="#111827").encode(
                 y=alt.Y("ETH_USD:Q", title="ETH price (USD)")
             )
-            hi = base.transform_filter(alt.datum.MCIS >= 1.0).mark_rect(opacity=0.12, color="#16a34a")
-            lo = base.transform_filter(alt.datum.MCIS <= -1.0).mark_rect(opacity=0.12, color="#ef4444")
+            hi = base.transform_filter(alt.datum.MCIS >= 1.0).mark_rect(opacity=0.12, color="#16a34a").encode()
+            lo = base.transform_filter(alt.datum.MCIS <= -1.0).mark_rect(opacity=0.12, color="#ef4444").encode()
             st.altair_chart((hi + lo + price_line).properties(height=300), use_container_width=True)
+
 
         # --- Insight
         hit_txt = f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—"
@@ -1101,6 +1102,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
