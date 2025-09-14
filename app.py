@@ -587,22 +587,57 @@ if not df_fees.empty:
 import os, pandas as pd, numpy as np, altair as alt, streamlit as st
 
 # --- light fallback for kpi cards if your helper isn't present
-if "kpi_card" not in globals():
-    def kpi_card(title: str, value: str, color: str = "#2563eb"):
-        st.markdown(
-            f"""
-            <div style="
-                border:1px solid #e5e7eb;border-left:6px solid {color};
-                border-radius:10px;padding:10px 12px;margin:4px 0;">
-                <div style="font-size:12px;color:#6b7280;margin-bottom:2px;">{title}</div>
-                <div style="font-size:18px;font-weight:600;color:#111827;">{value}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+#if "kpi_card" not in globals():
+#    def kpi_card(title: str, value: str, color: str = "#2563eb"):
+#        st.markdown(
+#            f"""
+#            <div style="
+#                border:1px solid #e5e7eb;border-left:6px solid {color};
+#                border-radius:10px;padding:10px 12px;margin:4px 0;">
+#                <div style="font-size:12px;color:#6b7280;margin-bottom:2px;">{title}</div>
+#                <div style="font-size:18px;font-weight:600;color:#111827;">{value}</div>
+#            </div>
+#            """,
+#            unsafe_allow_html=True,
+#        )
 
 # ---------- Metric card helpers (light-mode boxes) ----------
 from textwrap import dedent
+
+if "kpi_card" not in globals():
+    def kpi_card(label: str, value: str, pill: str | None = None, pill_color: str = "#10B981"):
+        """
+        Render a KPI in a rounded card with a thin border and optional pill badge.
+        - label: small heading text
+        - value: main number/text
+        - pill: optional badge text (e.g., 'Tailwind', 'Headwind', 'Neutral')
+        - pill_color: badge color (hex)
+        """
+        pill_html = (
+            f"""<span style="
+                    display:inline-block;padding:2px 10px;margin-left:8px;
+                    border-radius:999px;font-size:12px;
+                    background:{pill_color};color:white;">{pill}</span>"""
+            if pill else ""
+        )
+
+        st.markdown(
+            dedent(f"""
+            <div style="
+                border:1px solid rgba(23,43,77,0.15);
+                border-left:6px solid rgba(59,130,246,0.85);
+                border-radius:14px; padding:14px 16px; background:#F8FAFC;">
+                <div style="font-size:13px; color:#475569; font-weight:600; margin-bottom:6px;">
+                    {label}
+                </div>
+                <div style="font-size:26px; color:#0F172A; font-weight:700; line-height:1.1;">
+                    {value}{pill_html}
+                </div>
+            </div>
+            """),
+            unsafe_allow_html=True,
+        )
+
 
 if "draw_metrics_row" not in globals():
     def draw_metrics_row(metrics: list[dict], cols: int = 4):
@@ -1044,6 +1079,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
