@@ -1048,6 +1048,13 @@ else:
         st.altair_chart(ch_line, use_container_width=True)
         
         
+        # --- Prepare scatter data (MCIS vs ΔActivity)
+        sc_df = pd.DataFrame({
+            "MONTH": MCISz.index,
+            "MCIS": MCISz.values,
+            "DeltaActivityNext": dy_next.reindex(MCISz.index).values
+        }).dropna()
+        
         # --- Chart B: MCIS vs ΔActivity (needs ≥3 rows)
         if len(sc_df) >= 3:
             st.markdown("**Chart B. MCIS vs Next-month ΔActivity**")
@@ -1102,6 +1109,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
