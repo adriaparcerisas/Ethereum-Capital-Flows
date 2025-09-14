@@ -732,11 +732,10 @@ panel = (fees.merge(etf, on="MONTH", how="outer")
 # -------- header & definition
 draw_section(
     "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
-    subtitle=None,
-    definition=("Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
-                "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
-                "Rates direction is inferred via the <strong>most probable bucket</strong> "
-                "vs the month’s Fed Funds level.")
+    ("Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
+     "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
+     "Rates direction is inferred via the <strong>most probable bucket</strong> "
+     "vs the month’s Fed Funds level.")
 )
 
 # -------- KPIs
@@ -804,6 +803,7 @@ insight_box(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
