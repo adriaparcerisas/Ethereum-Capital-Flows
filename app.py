@@ -961,9 +961,26 @@ else:
         XtX = Z.T @ Z
         lam = 1.0
         w = np.linalg.solve(XtX + lam * np.eye(3), Z.T @ y_aligned)
+
+        # Turn into a non-negative Series
         weights = pd.Series(w, index=["etf", "rate", "fee"]).clip(lower=0)
-        if weights.sum() > 0:
+        
+        # If everything is ~0, fall back to equal weights
+        if weights.sum() <= 1e-12 or (weights <= 1e-12).all():
+            weights = pd.Series([1/3, 1/3, 1/3], index=["etf", "rate", "fee"])
+        else:
             weights = weights / weights.sum()
+        
+        # --- Apply a per-factor floor and renormalize
+        MIN_W = 0.05  # 5% floor per factor
+        n = len(weights)
+        if MIN_W * n < 1.0:
+            # Scale the original weights into the remaining (1 - n*MIN_W) mass, then add the floor
+            weights = (1 - MIN_W * n) * weights + MIN_W
+            # (Numerically) re-normalize to be safe
+            weights = weights / weights.sum()
+        # else: if the floor would exceed 100% in total (not our case), keep the normalized weights as-is
+
 
         MCIS = (Z @ weights).rename("MCIS")
         MCISz = (MCIS - MCIS.mean()) / MCIS.std(ddof=0)
@@ -1079,6 +1096,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
