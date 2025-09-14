@@ -581,221 +581,277 @@ if not df_fees.empty:
     fig8.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig8, use_container_width=True)
 
-# === 8. Activity Drivers — Fees, ETF Flows & Rates Direction ==================
-import os, re
+# =========================
+# SECTION 8 — Activity Drivers: Fees, ETF Flows & Rates Direction
+# =========================
+import os
+import re
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import altair as alt
+import streamlit as st
 
-# -------- helpers (CSV, dates, numeric cleaning)
-def _read_csv_auto(path_candidates):
-    """Read CSV with auto separator (',' or ';') and dtype=str."""
-    for pth in path_candidates:
-        if os.path.exists(pth):
-            with open(pth, "r", encoding="utf-8", errors="ignore") as fh:
-                head = fh.read(4096)
-            sep = ";" if head.count(";") > head.count(",") else ","
-            return pd.read_csv(pth, sep=sep, dtype=str)
-    return pd.DataFrame()
+# --- small helpers (idempotent) ---------------------------------------------
+if "kpi_card" not in globals():
+    def kpi_card(title: str, value: str, subtext: str | None = None, accent: str = "#2563eb"):
+        st.markdown(
+            f"""
+<div style="
+  position:relative;background:#F7FAFC;border:1px solid #E5E7EB;border-radius:12px;
+  padding:14px 16px;margin-bottom:10px;">
+  <div style="position:absolute;left:0;top:0;bottom:0;width:6px;background:{accent};
+    border-radius:12px 0 0 12px;"></div>
+  <div style="font-size:14px;color:#475467;margin-bottom:6px;"><strong>{title}</strong></div>
+  <div style="font-size:28px;font-weight:800;color:#111827;line-height:1">{value}</div>
+  {f'<div style="font-size:12px;color:#6B7280;margin-top:6px;">{subtext}</div>' if subtext else ''}
+</div>
+""",
+            unsafe_allow_html=True,
+        )
 
-def _month_start(series):
-    """Normalize to tz-naive month start; supports dd/mm/yyyy."""
-    dt = pd.to_datetime(series, errors="coerce", utc=True, dayfirst=True, infer_datetime_format=True)
-    dt = dt.dt.tz_localize(None)
-    return dt.dt.to_period("M").dt.to_timestamp()
+def _first_existing(*paths: str) -> str | None:
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
+    return None
 
-def _to_num(x):
-    """To numeric; keeps only digits/.-, handles comma decimals & (negatives)."""
-    if isinstance(x, pd.Series):
-        s = x.fillna("").astype(str)
-        neg = s.str.match(r"^\(.*\)$")
-        s2 = s.str.replace(r"[^\d\-,\.]", "", regex=True).str.replace(",", ".")
-        y = pd.to_numeric(s2, errors="coerce")
-        y[neg] = -y[neg]
-        return y
+def _coerce_num(x):
+    if pd.isna(x):
+        return np.nan
     s = str(x)
-    neg = s.startswith("(") and s.endswith(")")
-    s2 = re.sub(r"[^\d\-,\.]", "", s).replace(",", ".")
-    v = pd.to_numeric(s2, errors="coerce")
-    if pd.notna(v) and neg and v > 0:
-        v = -v
+    # strip thousands, %, M/B suffix and any stray parentheses
+    s = s.replace(",", "").replace("%", "")
+    s = re.sub(r"[\(\)]", "", s)
+    # allow k/M/B suffixes commonly used in sheets (not required, just helpful)
+    m = re.match(r"^([-+]?\d*\.?\d+)\s*([kKmMbB]?)$", s.strip())
+    if not m:
+        try:
+            return float(s)
+        except Exception:
+            return np.nan
+    v = float(m.group(1))
+    suf = m.group(2).lower()
+    if suf == "k": v *= 1e3
+    if suf == "m": v *= 1e6
+    if suf == "b": v *= 1e9
     return v
 
-# -------- loaders
-def _load_fees_activity():
-    # Expect columns: MONTH or DATE; AVG_TX_FEE_USD; optional ACTIVITY_INDEX
-    raw = _read_csv_auto(["data/fees_activity.csv", "/mnt/data/fees_activity.csv", "fees_activity.csv"])
-    if raw.empty:
-        return pd.DataFrame(columns=["MONTH", "AVG_TX_FEE_USD", "ACTIVITY_INDEX"])
-    cols = {c.upper(): c for c in raw.columns}
-    dcol = cols.get("MONTH") or cols.get("DATE") or raw.columns[0]
-    raw["MONTH"] = _month_start(raw[dcol])
-    if "AVG_TX_FEE_USD" in cols:
-        raw["AVG_TX_FEE_USD"] = _to_num(raw[cols["AVG_TX_FEE_USD"]])
-    elif "AVG_FEE_USD" in cols:
-        raw["AVG_TX_FEE_USD"] = _to_num(raw[cols["AVG_FEE_USD"]])
-    else:
-        raw["AVG_TX_FEE_USD"] = np.nan
-    if "ACTIVITY_INDEX" in cols:
-        raw["ACTIVITY_INDEX"] = _to_num(raw[cols["ACTIVITY_INDEX"]])
-    else:
-        raw["ACTIVITY_INDEX"] = np.nan
-    out = raw[["MONTH", "AVG_TX_FEE_USD", "ACTIVITY_INDEX"]].groupby("MONTH", as_index=False).mean()
-    return out.sort_values("MONTH")
+def _to_month(s, dayfirst=False):
+    dt = pd.to_datetime(s, errors="coerce", utc=True, dayfirst=dayfirst)
+    return pd.to_datetime(dt.dt.strftime("%Y-%m-01"))
 
-def _load_etf_monthly():
-    # Expect: MONTH + ETF_NET_FLOW_USD_MILLIONS (use that one)
-    raw = _read_csv_auto(["data/etf_flows.csv", "/mnt/data/etf_flows.csv", "etf_flows.csv"])
-    if raw.empty:
-        return pd.DataFrame(columns=["MONTH", "ETF_NET_FLOW_M"])
-    cols = {c.upper(): c for c in raw.columns}
-    dcol = cols.get("MONTH") or cols.get("DATE") or raw.columns[0]
-    raw["MONTH"] = _month_start(raw[dcol])
-    vcol = cols.get("ETF_NET_FLOW_USD_MILLIONS") or cols.get("ETF_NET_FLOW_MILLIONS") \
-        or cols.get("NET_FLOW_USD_MILLIONS") or [c for c in raw.columns if c != dcol][0]
-    raw["ETF_NET_FLOW_M"] = _to_num(raw[vcol])
-    out = raw.dropna(subset=["MONTH"]).groupby("MONTH", as_index=False)["ETF_NET_FLOW_M"].sum()
-    return out.sort_values("MONTH")
+def _fmt_money_m(x):
+    return "—M" if pd.isna(x) else f"{x/1e6:,.0f}M"
 
-def _load_fed_history():
-    raw = _read_csv_auto(["data/fedfunds_history.csv", "/mnt/data/fedfunds_history.csv", "fedfunds_history.csv"])
-    if raw.empty:
-        return pd.DataFrame(columns=["MONTH", "FEDFUNDS"])
-    cols = {c.upper(): c for c in raw.columns}
-    dcol = cols.get("OBSERVATION_DATE") or cols.get("DATE") or cols.get("MONTH") or raw.columns[0]
-    raw["MONTH"] = _month_start(raw[dcol])
-    vcol = cols.get("FEDFUNDS") or "FEDFUNDS"
-    raw["FEDFUNDS"] = _to_num(raw[vcol])
-    return raw[["MONTH", "FEDFUNDS"]].groupby("MONTH", as_index=False).last()
+def _fmt_pct01(x):
+    return "—" if pd.isna(x) else f"{x*100:.0f}%"
 
-def _load_rates_expectations():
-    # Wide table of buckets with probabilities; first col is DATE/MONTH
-    raw = _read_csv_auto(["data/rates_expectations.csv", "/mnt/data/rates_expectations.csv", "rates_expectations.csv"])
-    if raw.empty:
-        return pd.DataFrame(columns=["MONTH", "RATES_DIR", "RATES_PROB"])
-    cols = {c.upper(): c for c in raw.columns}
-    dcol = cols.get("DATE") or cols.get("MONTH") or raw.columns[0]
-    raw["DATE"] = pd.to_datetime(raw[dcol], errors="coerce", dayfirst=True)
-    raw["MONTH"] = _month_start(raw["DATE"])
-    value_cols = [c for c in raw.columns if c not in [dcol, "DATE", "MONTH"]]
-    long = raw.melt(id_vars=["MONTH"], value_vars=value_cols, var_name="BUCKET", value_name="PROB")
+# --- locate files ------------------------------------------------------------
+etf_path   = _first_existing("data/etf_flows.csv", "/mnt/data/etf_flows.csv")
+rates_path = _first_existing("data/rates_expectations.csv", "/mnt/data/rates_expectations.csv")
+hist_path  = _first_existing("data/fedfunds_history.csv", "/mnt/data/fedfunds_history.csv")
 
-    # normalise probability to [0, 1]
-    long["PROB"] = _to_num(long["PROB"])
-    if long["PROB"].max(skipna=True) > 1.0:
-        long["PROB"] = long["PROB"] / 100.0
-    long["PROB"] = long["PROB"].clip(lower=0, upper=1)
+fees_path  = _first_existing(  # try a couple of likely names you already use
+    "data/fees_activity.csv", "data/fees_price.csv", "/mnt/data/fees_activity.csv", "/mnt/data/fees_price.csv"
+)
 
-    def _bounds(lbl):
-        s = str(lbl).strip().replace("–", "-").replace("—", "-").replace("to", "-")
-        s = s.strip("()[]{} ")
-        parts = s.split("-")
-        if len(parts) != 2:
-            return np.nan, np.nan
-        a, b = _to_num(parts[0]), _to_num(parts[1])
-        if pd.isna(a) or pd.isna(b):
-            return np.nan, np.nan
-        # if <=30 assume % (not bps)
-        if max(a, b) <= 30:
-            a *= 100.0
-            b *= 100.0
-        return float(a), float(b)
+# --- read ETF net flows (monthly) -------------------------------------------
+etf = pd.DataFrame()
+if etf_path:
+    raw = pd.read_csv(etf_path)
+    # accept either DATE or MONTH
+    date_col = next((c for c in raw.columns if c.upper() in ("DATE","MONTH")), None)
+    if date_col:
+        etf = raw.copy()
+        etf["MONTH"] = _to_month(etf[date_col])
+        # find a numeric flow column (prefer ETF_NET_FLOW_USD_MILLIONS if present)
+        flow_col = next((c for c in etf.columns if c.upper() in (
+            "ETF_NET_FLOW_USD_MILLIONS","NET_FLOW_USD_MILLIONS","NET_FLOW","ETF_NET_FLOW"
+        )), None)
+        if flow_col:
+            etf["ETF_NET_FLOW"] = pd.to_numeric(etf[flow_col].map(_coerce_num), errors="coerce")
+        else:
+            etf["ETF_NET_FLOW"] = np.nan
+        etf = etf[["MONTH","ETF_NET_FLOW"]].dropna(subset=["MONTH"]).drop_duplicates(subset=["MONTH"])
 
-    b = long["BUCKET"].map(_bounds)
-    long["MID_BPS"] = (pd.Series([x[0] for x in b]) + pd.Series([x[1] for x in b])) / 2.0
+# --- read rates expectations (monthly most-probable bucket) ------------------
+rates = pd.DataFrame()
+if rates_path:
+    rraw = pd.read_csv(rates_path)
+    date_col = next((c for c in rraw.columns if c.upper() in ("DATE","MONTH")), None)
+    if date_col:
+        rates = rraw.copy()
+        rates["MONTH"] = _to_month(rates[date_col])
+        # probability columns may look like "PROB_0.00-0.25", values like "12%" or 0.12
+        prob_cols = [c for c in rates.columns if str(c).upper().startswith("PROB_")]
+        # clean any % and coerce to 0..1
+        for c in prob_cols:
+            rates[c] = pd.to_numeric(
+                rates[c].astype(str).str.replace("%","",regex=False).str.replace(",","",regex=False),
+                errors="coerce"
+            )
+            # detect if given in 0..100 and convert to 0..1
+            mx = rates[c].max(skipna=True)
+            if pd.notna(mx) and mx > 1.5:  # clearly in percent
+                rates[c] = rates[c] / 100.0
+        # pick bucket with max probability per row
+        def _pick(row):
+            if not prob_cols:
+                return pd.Series({"RATES_DIR":"HOLD","RATES_PROB":np.nan})
+            s = row[prob_cols]
+            if s.isna().all():
+                return pd.Series({"RATES_DIR":"HOLD","RATES_PROB":np.nan})
+            winner = s.astype(float).idxmax()
+            p = float(s.max())
+            # infer direction from bucket midpoint vs prior month midpoint
+            # bucket name like PROB_4.75-5.00 -> midpoint
+            try:
+                lo, hi = winner.split("_",1)[1].split("-")
+                mid = (float(lo) + float(hi)) / 2.0
+            except Exception:
+                mid = np.nan
+            return pd.Series({"RATES_BUCKET_MID":mid, "RATES_PROB":p})
+        picked = rates.apply(_pick, axis=1)
+        rates = pd.concat([rates[["MONTH"]], picked], axis=1)
+        # direction vs previous bucket midpoint
+        rates = rates.sort_values("MONTH").reset_index(drop=True)
+        prev = rates["RATES_BUCKET_MID"].shift(1)
+        diff = rates["RATES_BUCKET_MID"] - prev
+        rates["RATES_DIR"] = np.where(diff > 0.01, "HIKE",
+                               np.where(diff < -0.01, "CUT", "HOLD"))
+        rates = rates[["MONTH","RATES_DIR","RATES_PROB"]]
 
-    # mode per month
-    idx = long.groupby("MONTH")["PROB"].idxmax()
-    mode = long.loc[idx, ["MONTH", "MID_BPS", "PROB"]].rename(columns={"PROB": "MODE_PROB"})
+# --- read fees/activity (monthly) --------------------------------------------
+fees = pd.DataFrame()
+if fees_path:
+    fraw = pd.read_csv(fees_path)
+    # accept typical columns
+    date_col = next((c for c in fraw.columns if c.upper() in ("DATE","MONTH")), None)
+    if date_col:
+        fees = fraw.copy()
+        # some sources use day-first; try both, keep whichever yields more non-na
+        m1 = _to_month(fees[date_col], dayfirst=False)
+        m2 = _to_month(fees[date_col], dayfirst=True)
+        fees["MONTH"] = m1.where(m1.notna(), m2)
+        # average tx fee column candidate
+        fee_col = next((c for c in fees.columns if c.upper() in ("AVG_TX_FEE_USD","AVG_TX_FEE","FEE_USD")), None)
+        if fee_col:
+            fees["AVG_TX_FEE"] = pd.to_numeric(fees[fee_col].map(_coerce_num), errors="coerce")
+        else:
+            fees["AVG_TX_FEE"] = np.nan
+        # optional normalized activity index  (if your file already has one, it will be picked;
+        # otherwise we just reflect fees lightly)
+        act_col = next((c for c in fees.columns if c.upper() in ("ACTIVITY_INDEX","ACTIVITY","INDEX")), None)
+        if act_col:
+            fees["ACTIVITY_IDX"] = pd.to_numeric(fees[act_col].map(_coerce_num), errors="coerce")
+        else:
+            # very light transform for visualization if no index available
+            fees["ACTIVITY_IDX"] = (fees["AVG_TX_FEE"] / fees["AVG_TX_FEE"].rolling(6, min_periods=1).median()).clip(lower=0.8, upper=2.0)
+        fees = fees[["MONTH","AVG_TX_FEE","ACTIVITY_IDX"]].dropna(subset=["MONTH"]).drop_duplicates(subset=["MONTH"])
 
-    # compare to current fed funds to infer direction
-    fed = _load_fed_history()
-    mode = mode.merge(fed, on="MONTH", how="left")
-    mode["FED_BPS"] = mode["FEDFUNDS"] * 100.0
-    delta = mode["MID_BPS"] - mode["FED_BPS"]
-    thr = 12.5  # ~1/8%
-    mode["RATES_DIR"] = np.where(delta.abs() <= thr, "HOLD", np.where(delta > 0, "HIKE", "CUT"))
-    mode["RATES_PROB"] = mode["MODE_PROB"].clip(0, 1)
-    return mode[["MONTH", "RATES_DIR", "RATES_PROB"]].sort_values("MONTH")
+# --- assemble a panel (outer join on MONTH) -----------------------------------
+pieces = [d for d in [fees, etf, rates] if d is not None and not d.empty]
+panel = None
+for d in pieces:
+    panel = d if panel is None else panel.merge(d, on="MONTH", how="outer")
+if panel is not None:
+    panel = panel.sort_values("MONTH").reset_index(drop=True)
 
-# -------- assemble panel
-fees  = _load_fees_activity()
-etf   = _load_etf_monthly()
-rates = _load_rates_expectations()
-
-panel = (fees.merge(etf, on="MONTH", how="outer")
-              .merge(rates, on="MONTH", how="outer")
-              .sort_values("MONTH")
-              .drop_duplicates(subset=["MONTH"]))
-
-# -------- header & definition
+# --- header (no subtitle arg) -------------------------------------------------
 draw_section(
     "8. Activity Drivers — Fees, ETF Flows & Rates Direction",
     ("Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
      "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
      "Rates direction is inferred via the <strong>most probable bucket</strong> "
-     "vs the month’s Fed Funds level.")
+     "each month vs the month’s Fed Funds level.")
 )
 
-# -------- KPIs
-def _fmt_money_m(x):
-    return "—M" if pd.isna(x) else f"{x:,.0f}M"
-
-latest_row = panel.dropna(subset=["MONTH"]).iloc[-1] if not panel.empty else None
-k1 = latest_row["ACTIVITY_INDEX"] if latest_row is not None and "ACTIVITY_INDEX" in panel.columns else np.nan
-k2 = latest_row["AVG_TX_FEE_USD"] if latest_row is not None and "AVG_TX_FEE_USD" in panel.columns else np.nan
-k3 = latest_row["ETF_NET_FLOW_M"] if latest_row is not None and "ETF_NET_FLOW_M" in panel.columns else np.nan
-k4_dir = latest_row["RATES_DIR"] if latest_row is not None and "RATES_DIR" in panel.columns else None
-k4_p   = latest_row["RATES_PROB"] if latest_row is not None and "RATES_PROB" in panel.columns else np.nan
+# --- KPIs ---------------------------------------------------------------------
+k1 = k2 = k3 = k4_dir = k4_p = np.nan
+if panel is not None and not panel.empty:
+    latest_row = panel.dropna(subset=["MONTH"]).iloc[panel["MONTH"].idxmax()]
+    k1     = latest_row["ACTIVITY_IDX"] if "ACTIVITY_IDX" in latest_row else np.nan
+    k2     = latest_row["AVG_TX_FEE"] if "AVG_TX_FEE" in latest_row else np.nan
+    k3     = latest_row["ETF_NET_FLOW"] if "ETF_NET_FLOW" in latest_row else np.nan
+    k4_dir = latest_row["RATES_DIR"] if "RATES_DIR" in latest_row else np.nan
+    k4_p   = latest_row["RATES_PROB"] if "RATES_PROB" in latest_row else np.nan
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: kpi_card("Activity Index (latest)", f"{k1:,.2f}" if pd.notna(k1) else "—")
 with col2: kpi_card("Avg Tx Fee (USD)", f"{k2:,.2f}" if pd.notna(k2) else "—")
 with col3: kpi_card("ETF Net Flow", _fmt_money_m(k3))
-with col4: kpi_card("Fed Direction (mode)", f"{(k4_dir or '—')} ({int(round((0 if pd.isna(k4_p) else k4_p)*100))}%)")
+with col4:
+    if pd.notna(k4_p):
+        kpi_card("Fed Direction (mode)", f"{str(k4_dir)} ({_fmt_pct01(float(k4_p))})")
+    else:
+        kpi_card("Fed Direction (mode)", "—")
 
-# -------- chart
-has_any = False
-fig = make_subplots(specs=[[{"secondary_y": True}]])
-if "ACTIVITY_INDEX" in panel and panel["ACTIVITY_INDEX"].notna().any():
-    fig.add_trace(go.Scatter(x=panel["MONTH"], y=panel["ACTIVITY_INDEX"], name="Activity Index",
-                             mode="lines+markers"), secondary_y=False)
-    has_any = True
-if "AVG_TX_FEE_USD" in panel and panel["AVG_TX_FEE_USD"].notna().any():
-    fig.add_trace(go.Scatter(x=panel["MONTH"], y=panel["AVG_TX_FEE_USD"], name="Avg Tx Fee (USD)",
-                             mode="lines", line=dict(dash="dot")), secondary_y=True)
-    has_any = True
-if "ETF_NET_FLOW_M" in panel and panel["ETF_NET_FLOW_M"].notna().any():
-    fig.add_trace(go.Bar(x=panel["MONTH"], y=panel["ETF_NET_FLOW_M"], name="ETF Net Flow (M)", opacity=0.35),
-                  secondary_y=True)
-    has_any = True
-if "RATES_DIR" in panel:
-    m = {"CUT": -1.0, "HOLD": 0.0, "HIKE": 1.0}
-    dir_num = panel["RATES_DIR"].map(m).astype(float)
-    if dir_num.notna().any():
-        scale = (panel["AVG_TX_FEE_USD"].dropna().median() or 1.0) * 0.1
-        fig.add_trace(
-            go.Scatter(x=panel["MONTH"], y=dir_num * scale, name="Rates Direction (scaled)",
-                       fill="tozeroy", opacity=0.15),
-            secondary_y=True,
-        )
-        has_any = True
+# --- Chart (only if we have something to draw) --------------------------------
+has_fees  = panel is not None and "AVG_TX_FEE"  in panel.columns and panel["AVG_TX_FEE"].notna().any()
+has_act   = panel is not None and "ACTIVITY_IDX" in panel.columns and panel["ACTIVITY_IDX"].notna().any()
+has_etf   = panel is not None and "ETF_NET_FLOW" in panel.columns and panel["ETF_NET_FLOW"].notna().any()
 
-if has_any:
-    fig.update_xaxes(title_text="")
-    fig.update_yaxes(title_text="Activity Index", secondary_y=False)
-    fig.update_yaxes(title_text="Fees (USD) / ETF Net Flow (M)", secondary_y=True)
-    st.plotly_chart(fig, use_container_width=True)
+if not (panel is not None and (has_fees or has_act or has_etf)):
+    st.markdown(
+        '<div style="background:#EEF4FF;border:1px solid #D1D9FF;color:#243B53; '
+        'padding:14px 16px;border-radius:10px;">'
+        'No chartable data for this section yet. The KPIs above will populate as soon as the CSVs are readable.'
+        '</div>',
+        unsafe_allow_html=True
+    )
 else:
-    info_box("No chartable data for this section yet. The KPIs above will populate as soon as the CSVs are readable.")
+    plot_df = panel.copy()
+    plot_df = plot_df.dropna(subset=["MONTH"])
+    # clean any lingering strings in numerics
+    for c in ["AVG_TX_FEE","ACTIVITY_IDX","ETF_NET_FLOW"]:
+        if c in plot_df.columns:
+            plot_df[c] = pd.to_numeric(plot_df[c].map(_coerce_num), errors="coerce")
 
-# short interpretation box
-insight_box(
-    "Fees have eased while ETF net flows and policy expectations provide additional context for demand impulses. "
-    "Using the mode of rate expectations gives a simple directional signal (Hike/Cut/Hold)."
+    base = alt.Chart(plot_df).encode(x=alt.X("MONTH:T", title=None))
+
+    layers = []
+
+    if has_act:
+        layers.append(
+            base.mark_line(point=True).encode(
+                y=alt.Y("ACTIVITY_IDX:Q", title="Activity Index"),
+                color=alt.value("#1D4ED8"),
+                tooltip=[alt.Tooltip("MONTH:T", title="Month"), alt.Tooltip("ACTIVITY_IDX:Q", title="Activity Index", format=".2f")]
+            )
+        )
+
+    if has_fees:
+        layers.append(
+            base.mark_line(strokeDash=[4,3]).encode(
+                y=alt.Y("AVG_TX_FEE:Q", axis=alt.Axis(title="Fees (USD) / ETF Net Flow (M)", orient="right")),
+                color=alt.value("#60A5FA"),
+                tooltip=[alt.Tooltip("MONTH:T", title="Month"), alt.Tooltip("AVG_TX_FEE:Q", title="Avg Tx Fee (USD)", format=".2f")]
+            )
+        )
+
+    if has_etf:
+        layers.append(
+            base.mark_area(opacity=0.15).encode(
+                y=alt.Y("ETF_NET_FLOW:Q", axis=alt.Axis(title=None, orient="right")),
+                color=alt.value("#34D399"),
+                tooltip=[alt.Tooltip("MONTH:T", title="Month"), alt.Tooltip("ETF_NET_FLOW:Q", title="ETF Net Flow", format=",.0f")]
+            )
+        )
+
+    chart = alt.layer(*layers).resolve_scale(y='independent').properties(height=380)
+    st.altair_chart(chart, use_container_width=True)
+
+# --- Insight ------------------------------------------------------------------
+st.markdown(
+    '<div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;padding:14px 16px;margin-top:12px;">'
+    '<strong>Insight.</strong> Fees have eased while ETF net flows and policy expectations provide additional context '
+    'for demand impulses. Mode of rate expectations offers a simple directional signal (Hike/Cut/Hold).'
+    '</div>',
+    unsafe_allow_html=True
 )
-# ===============================================================================
+# =========================
+# END SECTION 8
+# =========================
 
 
 # -----------------------------------------------------------
@@ -803,6 +859,7 @@ insight_box(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
