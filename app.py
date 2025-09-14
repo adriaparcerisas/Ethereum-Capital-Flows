@@ -756,10 +756,10 @@ else:
         df = df.assign(MONTH_DT=mdt).sort_values("MONTH_DT").set_index("MONTH_DT")
 
     # drop the very last row if it looks like a partial future/ongoing month
-    if len(df) >= 2:
-        last, prev = df.index[-1], df.index[-2]
-        if last.to_period("M") == prev.to_period("M") + 1 and last.day <= 15:
-            df = df.iloc[:-1]
+    #if len(df) >= 2:
+    #    last, prev = df.index[-1], df.index[-2]
+    #    if last.to_period("M") == prev.to_period("M") + 1 and last.day <= 15:
+    #        df = df.iloc[:-1]
 
     # --- numeric coercion
     y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
@@ -941,6 +941,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
