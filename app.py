@@ -504,11 +504,20 @@ for d in [eth_p, fees_p, etf_m, rates_m]:
 if panel is None or panel.empty:
     draw_section(
         "3. Activity Drivers — Fees, ETF Flows & Rates Direction",
-        definition=("Relates <strong>transaction costs</strong>, <strong>ETF primary flows</strong> and "
-                    "<strong>policy rate expectations</strong> to on-chain activity and ETH price."),
+        definition=(
+        "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
+        "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
+        "Ethereum recently recorded <strong>all-time-high levels of on-chain activity</strong>, "
+        "marking one of the busiest months in its history "
+        "([Crypto.com Research, Sep 2025](https://crypto.com/us/research/research-roundup-sep-2025); "
+        "[CryptoRank, 2025](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)). "
+        "This section investigates the <em>drivers</em> behind that surge — namely whether lower fees, stronger ETF inflows, "
+        "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
+    ),
     )
     st.info("Data not found. Ensure these exist under /data: eth_price.csv, fees_price.csv, etf_flows_monthly.csv, rates_expectations_monthly.csv, fedfunds_history_monthly.csv.")
     st.stop()
+
 
 # Sort, coerce, and drop September 2025+
 panel["MONTH_DT"] = pd.to_datetime(panel["MONTH"], format="%Y-%m", errors="coerce")
@@ -533,7 +542,14 @@ k4_p   = latest["RATES_PROB"] if "RATES_PROB" in panel.columns else np.nan
 # --- Render section
 draw_section(
     "3) Activity Drivers — Fees, ETF Flows & Rate Expectations",
-    "Relates <strong>execution costs</strong> (avg fee), <strong>exogenous demand</strong> (ETF net flows), and <strong>policy stance</strong> (cut probability / direction) to on-chain activity."
+    "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
+    "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
+    "Ethereum recently recorded <strong>all-time-high levels of on-chain activity</strong>, "
+    "marking one of the busiest months in its history "
+    "([Crypto.com Research, Sep 2025](https://crypto.com/us/research/research-roundup-sep-2025); "
+    "[CryptoRank, 2025](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)). "
+    "This section investigates the <em>drivers</em> behind that surge — namely whether lower fees, stronger ETF inflows, "
+    "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
 )
 
 
@@ -935,60 +951,36 @@ else:
         )
 
 
+# ================================
+# References & Data Sources
+# ================================
+st.markdown("### References & Data Sources")
+
+st.markdown(
+    """
+- **Ethereum activity ATH**  
+  [Crypto.com Research Roundup — Sep 2025](https://crypto.com/us/research/research-roundup-sep-2025)  
+  [CryptoRank — Why Ethereum just posted its third biggest month in history](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)
+
+- **Interest rates / monetary policy**  
+  [FRED — Federal Funds Rate](https://fred.stlouisfed.org/series/FEDFUNDS)  
+  [CME FedWatch Tool](https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html?utm_source=chatgpt.com)
+
+- **ETF flows**  
+  [Farside Investors — Ethereum ETF Flows](https://farside.co.uk/eth/?utm_source=chatgpt.com)
+
+- **On-chain data provider**  
+  Flipside Crypto
+    """
+)
+
+
 
 # -----------------------------------------------------------
 # Footer
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
