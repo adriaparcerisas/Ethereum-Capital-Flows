@@ -706,34 +706,93 @@ rates = pd.DataFrame()
 if not rates_df.empty:
     r = rates_df.copy()
     r = r.rename(columns={c: c.upper() for c in r.columns})
-    # DATE -> MONTH
-    date_col = "DATE" if "DATE" in r.columns else list(r.columns)[0]
-    r["DATE"] = pd.to_datetime(r[date_col], errors="coerce", dayfirst=True)
-    r["MONTH"] = s8_month_start(r["DATE"])
-    for c in ["LOWER_BPS","UPPER_BPS","PROB"]:
-        if c in r.columns: r[c] = s8_num(r[c])
-    r["MIDPOINT"] = (r.get("LOWER_BPS", np.nan) + r.get("UPPER_BPS", np.nan)) / 2.0
-    # attach FedFunds by month
-    if not fed_df.empty and set(["observation_date","FEDFUNDS"]).issubset(fed_df.columns):
-        f = fed_df.copy()
-        f["MONTH"] = s8_month_start(f["observation_date"])
-        r = r.merge(f[["MONTH","FEDFUNDS"]], on="MONTH", how="left")
 
-    def _pick_mode(g: pd.DataFrame) -> pd.Series:
-        g = g.dropna(subset=["PROB"])
-        if g.empty:
-            return pd.Series({"RATES_DIR":"HOLD","RATES_PROB":np.nan})
-        peak = g.loc[g["PROB"].idxmax()]
-        target = peak.get("MIDPOINT", np.nan)
-        current = g["FEDFUNDS"].iloc[0] if "FEDFUNDS" in g.columns else np.nan
-        prob = peak.get("PROB", np.nan)
-        if pd.isna(target) or pd.isna(current):
-            return pd.Series({"RATES_DIR":"HOLD","RATES_PROB":prob})
-        if target > current:  return pd.Series({"RATES_DIR":"HIKE","RATES_PROB":prob})
-        if target < current:  return pd.Series({"RATES_DIR":"CUT","RATES_PROB":prob})
-        return pd.Series({"RATES_DIR":"HOLD","RATES_PROB":prob})
+    # 1) DATE -> MONTH
+    date_col = "DATE" if "DATE" in r.columns else next((c for c in r.columns if "DATE" in c or "DAY" in c), None)
+    if date_col is None:
+        # if there is no explicit date column, abort cleanly
+        st.warning("rates_expectations.csv has no DATE column; skipping rates mode overlay.")
+        r = pd.DataFrame()
+    else:
+        r["DATE"] = pd.to_datetime(r[date_col], errors="coerce", dayfirst=True)
+        r["MONTH"] = s8_month_start(r["DATE"])
 
-    rates = r.groupby("MONTH").apply(_pick_mode, include_groups=False).reset_index()
+    if not r.empty:
+        # 2) Find probability column robustly
+        prob_col = None
+        for c in r.columns:
+            cu = c.upper()
+            if "PROB" in cu:      # matches PROB, PROBABILITY, PROB_PCT, etc.
+                prob_col = c
+                break
+        # if still none, try common alternates
+        if prob_col is None:
+            for alt in ("PROBABILITY", "PROBABILITY_PCT", "PROB_PCT", "PCT", "WEIGHT"):
+                if alt in r.columns:
+                    prob_col = alt
+                    break
+
+        # 3) Ensure rate bucket bounds exist
+        # Expect LOWER_BPS / UPPER_BPS (or similar). If missing, try to infer or bail gracefully.
+        lower_col = next((c for c in r.columns if c.upper() in ("LOWER_BPS","LOWER","LOWER_BOUND_BPS","LOWER_BOUND")), None)
+        upper_col = next((c for c in r.columns if c.upper() in ("UPPER_BPS","UPPER","UPPER_BOUND_BPS","UPPER_BOUND")), None)
+
+        # Coerce numerics
+        if lower_col is not None: r["LOWER_BPS"] = s8_num(r[lower_col])
+        if upper_col is not None: r["UPPER_BPS"] = s8_num(r[upper_col])
+
+        # Probability → numeric [0,1]
+        if prob_col is not None:
+            prob_series = r[prob_col].astype(str).str.strip()
+            # drop symbols like %, commas; handle parentheses
+            prob_series = (prob_series
+                .str.replace("%", "", regex=False)
+                .str.replace(",", ".", regex=False)
+                .str.replace(r"[^\d\.\-]", "", regex=True)
+            )
+            r["PROB"] = pd.to_numeric(prob_series, errors="coerce")
+            # If looks like 0–100, scale to 0–1
+            if r["PROB"].dropna().gt(1).any():
+                r["PROB"] = r["PROB"] / 100.0
+        else:
+            # No probability column — set equal weights within month to avoid crashes
+            r["PROB"] = np.nan
+
+        # Midpoint (for mode decision)
+        r["MIDPOINT"] = (r.get("LOWER_BPS", np.nan) + r.get("UPPER_BPS", np.nan)) / 2.0
+
+        # Attach FedFunds by month (to compare midpoint vs current rate)
+        if not fed_df.empty and set(["observation_date", "FEDFUNDS"]).issubset(fed_df.columns):
+            f = fed_df.copy()
+            f["MONTH"] = s8_month_start(f["observation_date"])
+            r = r.merge(f[["MONTH", "FEDFUNDS"]], on="MONTH", how="left")
+
+        def _pick_mode(g: pd.DataFrame) -> pd.Series:
+            # If no PROB, assign equal weights
+            gg = g.copy()
+            if gg["PROB"].isna().all():
+                gg["PROB"] = 1.0 / max(len(gg), 1)
+            gg = gg.dropna(subset=["PROB"])
+            if gg.empty:
+                return pd.Series({"RATES_DIR": "HOLD", "RATES_PROB": np.nan})
+
+            # pick bucket with highest probability
+            peak_idx = gg["PROB"].idxmax()
+            peak = gg.loc[peak_idx]
+            target = peak.get("MIDPOINT", np.nan)
+            current = gg["FEDFUNDS"].iloc[0] if "FEDFUNDS" in gg.columns else np.nan
+            prob = peak.get("PROB", np.nan)
+
+            if pd.isna(target) or pd.isna(current):
+                return pd.Series({"RATES_DIR": "HOLD", "RATES_PROB": prob})
+            if target > current:  return pd.Series({"RATES_DIR": "HIKE", "RATES_PROB": prob})
+            if target < current:  return pd.Series({"RATES_DIR": "CUT",  "RATES_PROB": prob})
+            return pd.Series({"RATES_DIR": "HOLD", "RATES_PROB": prob})
+
+        if "MONTH" in r.columns:
+            rates = r.groupby("MONTH").apply(_pick_mode, include_groups=False).reset_index()
+        else:
+            rates = pd.DataFrame()
 
 # ---------- preprocess: price -> monthly ETH price ----------
 price = pd.DataFrame()
@@ -985,6 +1044,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
