@@ -741,70 +741,75 @@ ts = panel[ts_cols].dropna(subset=["MONTH_DT"]).copy()
 left = alt.Chart(ts).mark_line(point=False, color="#0ea5e9").encode(
     x=alt.X("MONTH_DT:T", title="Month"),
     y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index", axis=alt.Axis(grid=True)),
-    tooltip=[alt.Tooltip("MONTH:N", title="Month"),
-             alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f")]
+    tooltip=[
+        alt.Tooltip("MONTH:N", title="Month"),
+        alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f")
+    ],
 )
 
 fee_line = alt.Chart(ts).mark_line(strokeDash=[4,3], color="#f59e0b").encode(
-    x="MONTH_DT:T",
+    x=alt.X("MONTH_DT:T", title="Month"),
     y=alt.Y("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
-    tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)", format=",.2f")]
+    tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)", format=",.2f")],
 )
 
 etf_bar = alt.Chart(ts).mark_bar(opacity=0.35, color="#10b981").encode(
-    x="MONTH_DT:T",
+    x=alt.X("MONTH_DT:T", title="Month"),
     y=alt.Y("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
-    tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)", format=",.0f")]
+    tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)", format=",.0f")],
 )
 
 chart_ts = alt.layer(left, fee_line, etf_bar).resolve_scale(y="independent").properties(height=360)
 st.altair_chart(chart_ts, use_container_width=True)
 
-# 8B) What correlates with activity? (two panels)
-corr_cols = [c for c in ["ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS","AVG_ETH_PRICE_USD"] if c in panel.columns]
-corr_df = panel.dropna(subset=["ACTIVITY_INDEX"])[corr_cols].copy()
+# 8B-L) Activity vs Fees (scatter + regression)
+if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
+    corr_df = panel.dropna(subset=["ACTIVITY_INDEX","AVG_TX_FEE_USD"])[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]]
+    c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#f59e0b").encode(
+        x=alt.X("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
+        y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
+        tooltip=[
+            alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)", format=",.2f"),
+            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
+        ],
+    )
+    reg = c.transform_regression("AVG_TX_FEE_USD", "ACTIVITY_INDEX").mark_line(color="#111827")
+    st.altair_chart((c + reg).properties(height=320), use_container_width=True)
+else:
+    st.info("Need ACTIVITY_INDEX and AVG_TX_FEE_USD to plot activity vs fees.")
 
-colL, colR = st.columns(2)
+# 8B-R) Activity vs ETF Flows (scatter + regression)
+if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
+    corr_df2 = panel.dropna(subset=["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"])[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]]
+    c = alt.Chart(corr_df2).mark_circle(size=70, opacity=0.7, color="#10b981").encode(
+        x=alt.X("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
+        y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
+        tooltip=[
+            alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)", format=",.0f"),
+            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
+        ],
+    )
+    reg = c.transform_regression("ETF_NET_FLOW_USD_MILLIONS", "ACTIVITY_INDEX").mark_line(color="#065f46")
+    st.altair_chart((c + reg).properties(height=320), use_container_width=True)
+else:
+    st.info("Need ACTIVITY_INDEX and ETF_NET_FLOW_USD_MILLIONS to plot activity vs ETF flows.")
 
-with colL:
-    if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(corr_df.columns):
-        c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#f59e0b").encode(
-            x=alt.X("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
-            y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-            tooltip=[alt.Tooltip("AVG_TX_FEE_USD:Q","Fee", format=",.2f"),
-                     alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f")]
-        )
-        reg = c.transform_regression("AVG_TX_FEE_USD", "ACTIVITY_INDEX").mark_line(color="#111827")
-        st.altair_chart((c + reg).properties(height=320), use_container_width=True)
-    else:
-        st.info("Need ACTIVITY_INDEX and AVG_TX_FEE_USD to plot activity vs fees.")
-
-with colR:
-    if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(corr_df.columns):
-        c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#10b981").encode(
-            x=alt.X("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
-            y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-            tooltip=[alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q","ETF Flow (M)", format=",.0f"),
-                     alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f")]
-        )
-        reg = c.transform_regression("ETF_NET_FLOW_USD_MILLIONS", "ACTIVITY_INDEX").mark_line(color="#065f46")
-        st.altair_chart((c + reg).properties(height=320), use_container_width=True)
-    else:
-        st.info("Need ACTIVITY_INDEX and ETF_NET_FLOW_USD_MILLIONS to plot activity vs ETF flows.")
-
-# 8C) Does higher activity map to price?
+# 8C) Activity vs Price (scatter + regression)
 if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
     df_ap = panel.dropna(subset=["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"])[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]]
     c = alt.Chart(df_ap).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
         x=alt.X("ACTIVITY_INDEX:Q", title="Activity Index"),
         y=alt.Y("AVG_ETH_PRICE_USD:Q", title="ETH Price (USD)"),
-        tooltip=[alt.Tooltip("ACTIVITY_INDEX:Q","Activity", format=",.2f"),
-                 alt.Tooltip("AVG_ETH_PRICE_USD:Q","Price", format=",.2f")]
+        tooltip=[
+            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
+            alt.Tooltip("AVG_ETH_PRICE_USD:Q", title="Price (USD)", format=",.2f"),
+        ],
     )
     reg = c.transform_regression("ACTIVITY_INDEX","AVG_ETH_PRICE_USD").mark_line(color="#1f2937")
     st.altair_chart((c + reg).properties(height=320), use_container_width=True)
 else:
     st.info("Need ACTIVITY_INDEX and AVG_ETH_PRICE_USD to show price vs activity.")
+
 
 # --- Insight line
 insights = []
@@ -831,6 +836,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
