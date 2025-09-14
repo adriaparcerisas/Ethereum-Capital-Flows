@@ -185,6 +185,38 @@ def load_active_activity(path="data/active_addresses.csv"):
     df = df.sort_values(["MONTH", "SECTOR"], kind="stable").reset_index(drop=True)
     return df
 
+import pandas as pd
+from pathlib import Path
+
+# =========================
+# Load & merge all CSV data
+# =========================
+data_path = Path("data")
+
+# Load all CSVs in the /data folder
+dfs = []
+for file in data_path.glob("*.csv"):
+    df_tmp = pd.read_csv(file)
+
+    # normalize MONTH column
+    if "MONTH" in df_tmp.columns:
+        df_tmp["MONTH"] = df_tmp["MONTH"].astype(str).str[:7]  # ensure YYYY-MM
+        df_tmp["MONTH_DT"] = pd.to_datetime(df_tmp["MONTH"], errors="coerce")
+
+    dfs.append(df_tmp)
+
+# Merge into one master panel
+if dfs:
+    panel = dfs[0]
+    for d in dfs[1:]:
+        panel = pd.merge(panel, d, on=["MONTH", "MONTH_DT"], how="outer")
+
+    # Sort by time
+    panel = panel.sort_values("MONTH_DT").reset_index(drop=True)
+else:
+    panel = pd.DataFrame()
+
+
 # Call the loader
 df_active = load_active_activity("data/active_addresses.csv")
 # -----------------------------------------------------------
@@ -237,86 +269,115 @@ if not df_volcat.empty:
     insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 
 # ================================
-# 2) On-chain Activity & Fees
+# 2) Monthly Active by Sector
 # ================================
-st.markdown("### 2) On-chain Activity & Fees")
+st.markdown("### 2) Monthly Active Addresses & Transactions — by Sector")
+st.caption(
+    "Breaks down activity by vertical. Toggle metric and log scale to compare growth dynamics across segments."
+)
 
-need = {"MONTH", "ACTIVE_ADDR", "TX_COUNT", "AVG_TX_FEE_USD"}
-if not need.issubset(df.columns):
-    st.warning("Section 2: missing columns: " + ", ".join(sorted(need - set(df.columns))))
+need_cols = {"MONTH", "SECTOR", "AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"}
+df2 = None
+if "MONTH_DT" not in panel.columns and "MONTH" in panel.columns:
+    panel["MONTH_DT"] = pd.to_datetime(panel["MONTH"], errors="coerce")
+
+if need_cols.issubset(panel.columns):
+    # Copy only what we need
+    df2 = panel.loc[:, ["MONTH", "MONTH_DT", "SECTOR", "AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"]].copy()
+
+    # Fold "NFT Transfers" into "Others" (token transfers bucket)
+    if "SECTOR" in df2.columns:
+        df2["SECTOR"] = df2["SECTOR"].replace({"NFT Transfers": "Others"})
+
+    # Aggregate in case multiple rows per (MONTH, SECTOR)
+    df2 = (
+        df2.groupby(["MONTH", "MONTH_DT", "SECTOR"], as_index=False)[
+            ["AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"]
+        ].sum()
+    )
+
+    # Controls
+    left, right = st.columns([2, 1])
+    with left:
+        metric_choice = st.radio(
+            "Metric",
+            options=["Addresses (avg daily)", "Transactions (monthly)"],
+            horizontal=True,
+        )
+    with right:
+        use_log = st.checkbox("Log scale", value=False)
+
+    # Select column
+    if metric_choice.startswith("Addresses"):
+        value_col = "AVG_DAILY_ACTIVE_ADDRESSES"
+        y_title = "Avg daily active addresses"
+    else:
+        value_col = "TRANSACTIONS"
+        y_title = "Monthly transactions"
+
+    # KPIs (latest totals and top-sector share)
+    latest_dt = df2["MONTH_DT"].max()
+    snap = df2[df2["MONTH_DT"] == latest_dt].copy()
+    total_latest = float(snap[value_col].sum()) if not snap.empty else float("nan")
+    top_row = snap.loc[snap[value_col].idxmax()] if not snap.empty else None
+    top_sector = top_row["SECTOR"] if top_row is not None else "—"
+    top_share = (float(top_row[value_col]) / total_latest * 100.0) if (top_row is not None and total_latest > 0) else float("nan")
+
+    # YoY growth where possible (vs same month last year)
+    prev_year_dt = (latest_dt - pd.DateOffset(years=1)) if pd.notna(latest_dt) else None
+    yoy_total = float(
+        df2.loc[df2["MONTH_DT"] == prev_year_dt, value_col].sum()
+    ) if prev_year_dt is not None else float("nan")
+    yoy = (total_latest / yoy_total - 1.0) * 100.0 if pd.notna(yoy_total) and yoy_total > 0 else float("nan")
+
+    metrics = [
+        {"label": f"Latest total {y_title.lower()}", "value": f"{total_latest:,.0f}", "delta": (f"{yoy:,.0f}% YoY" if pd.notna(yoy) else None), "color": "#0ea5e9"},
+        {"label": "Top sector share (latest)", "value": f"{top_sector}: {top_share:,.1f}%", "delta": None, "color": "#10b981"},
+    ]
+    draw_metrics_row(metrics, cols=2)
+
+    # Chart — multi-line by sector
+    plot_df = df2.dropna(subset=["MONTH_DT", value_col]).copy()
+    # Small epsilon to avoid log-scale issues on zeros
+    eps = 1e-9
+    if use_log:
+        plot_df[value_col] = plot_df[value_col].astype(float) + eps
+
+    color_scale = alt.Scale(scheme="tableau20")
+    ch = (
+        alt.Chart(plot_df)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("MONTH_DT:T", title="Month"),
+            y=alt.Y(
+                f"{value_col}:Q",
+                title=y_title,
+                scale=alt.Scale(type="log") if use_log else alt.Scale(zero=True),
+            ),
+            color=alt.Color("SECTOR:N", title="Sector", scale=color_scale),
+            tooltip=[
+                alt.Tooltip("MONTH:T", title="Month"),
+                alt.Tooltip("SECTOR:N", title="Sector"),
+                alt.Tooltip(f"{value_col}:Q", title=y_title, format=",.0f"),
+            ],
+        )
+        .properties(height=360)
+    )
+    st.altair_chart(ch, use_container_width=True)
+
+    # Insight
+    st.markdown(
+        f"- **Insight.** {('Log scale: ' if use_log else '')}"
+        f"Latest month shows **{top_sector}** leading with **{top_share:,.1f}%** share. "
+        f"Total {y_title.lower()} sits at **{total_latest:,.0f}**, "
+        + (f"~**{yoy:,.0f}% YoY** growth." if pd.notna(yoy) else "YoY comparison not available.")
+    )
+
 else:
-    df2 = df.copy()
-
-    df2 = df2.sort_values("MONTH_DT")
-
-    # Toggle for log scale
-    log_scale = st.checkbox("Show charts in log scale (Section 2)", value=False)
-
-    # Chart A: Active Addresses
-    st.markdown("**Chart A. Monthly Active Addresses**")
-    ch_addr = (
-        alt.Chart(df2)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("MONTH_DT:T", title="Month"),
-            y=alt.Y(
-                "ACTIVE_ADDR:Q",
-                title="Active Addresses",
-                scale=alt.Scale(type="log" if log_scale else "linear"),
-            ),
-            tooltip=[
-                alt.Tooltip("MONTH_DT:T", title="Month"),
-                alt.Tooltip("ACTIVE_ADDR:Q", format=",.0f"),
-            ],
-            color=alt.value("#0ea5e9"),
-        )
-        .properties(height=300)
+    st.warning(
+        "Section 2 data missing. Expected columns: "
+        "`MONTH, MONTH_DT, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS`."
     )
-    st.altair_chart(ch_addr, use_container_width=True)
-
-    # Chart B: Transactions
-    st.markdown("**Chart B. Monthly Transactions**")
-    ch_tx = (
-        alt.Chart(df2)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("MONTH_DT:T", title="Month"),
-            y=alt.Y(
-                "TX_COUNT:Q",
-                title="Transactions",
-                scale=alt.Scale(type="log" if log_scale else "linear"),
-            ),
-            tooltip=[
-                alt.Tooltip("MONTH_DT:T", title="Month"),
-                alt.Tooltip("TX_COUNT:Q", format=",.0f"),
-            ],
-            color=alt.value("#111827"),
-        )
-        .properties(height=300)
-    )
-    st.altair_chart(ch_tx, use_container_width=True)
-
-    # Chart C: Average Transaction Fee
-    st.markdown("**Chart C. Average Transaction Fee (USD)**")
-    ch_fee = (
-        alt.Chart(df2)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("MONTH_DT:T", title="Month"),
-            y=alt.Y(
-                "AVG_TX_FEE_USD:Q",
-                title="Average Fee (USD)",
-                scale=alt.Scale(type="log" if log_scale else "linear"),
-            ),
-            tooltip=[
-                alt.Tooltip("MONTH_DT:T", title="Month"),
-                alt.Tooltip("AVG_TX_FEE_USD:Q", format=",.4f"),
-            ],
-            color=alt.value("#ef4444"),
-        )
-        .properties(height=300)
-    )
-    st.altair_chart(ch_fee, use_container_width=True)
 
 
 # -----------------------------------------------------------
@@ -1087,6 +1148,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
