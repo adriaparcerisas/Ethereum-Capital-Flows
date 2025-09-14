@@ -185,38 +185,6 @@ def load_active_activity(path="data/active_addresses.csv"):
     df = df.sort_values(["MONTH", "SECTOR"], kind="stable").reset_index(drop=True)
     return df
 
-import pandas as pd
-from pathlib import Path
-
-# =========================
-# Load & merge all CSV data
-# =========================
-data_path = Path("data")
-
-# Load all CSVs in the /data folder
-dfs = []
-for file in data_path.glob("*.csv"):
-    df_tmp = pd.read_csv(file)
-
-    # normalize MONTH column
-    if "MONTH" in df_tmp.columns:
-        df_tmp["MONTH"] = df_tmp["MONTH"].astype(str).str[:7]  # ensure YYYY-MM
-        df_tmp["MONTH_DT"] = pd.to_datetime(df_tmp["MONTH"], errors="coerce")
-
-    dfs.append(df_tmp)
-
-# Merge into one master panel
-if dfs:
-    panel = dfs[0]
-    for d in dfs[1:]:
-        panel = pd.merge(panel, d, on=["MONTH", "MONTH_DT"], how="outer")
-
-    # Sort by time
-    panel = panel.sort_values("MONTH_DT").reset_index(drop=True)
-else:
-    panel = pd.DataFrame()
-
-
 # Call the loader
 df_active = load_active_activity("data/active_addresses.csv")
 # -----------------------------------------------------------
@@ -268,117 +236,111 @@ if not df_volcat.empty:
 
     insight("DeFi lending and DEX trading typically drive most on-chain flow; the mix contextualizes risk-on vs defensive phases.")
 
-# ================================
-# 2) Monthly Active by Sector
-# ================================
-st.markdown("### 2) Monthly Active Addresses & Transactions — by Sector")
-st.caption(
-    "Breaks down activity by vertical. Toggle metric and log scale to compare growth dynamics across segments."
+
+# -----------------------------------------------------------
+# 2) Monthly Active Addresses and Transactions by Sector (Toggle)
+# -----------------------------------------------------------
+draw_section(
+    "2. Monthly Active Addresses and Transactions by Sector",
+    "Choose one metric at a time to isolate user base (avg daily active addresses) vs network load (transactions)."
 )
 
-need_cols = {"MONTH", "SECTOR", "AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"}
-df2 = None
-if "MONTH_DT" not in panel.columns and "MONTH" in panel.columns:
-    panel["MONTH_DT"] = pd.to_datetime(panel["MONTH"], errors="coerce")
-
-if need_cols.issubset(panel.columns):
-    # Copy only what we need
-    df2 = panel.loc[:, ["MONTH", "MONTH_DT", "SECTOR", "AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"]].copy()
-
-    # Fold "NFT Transfers" into "Others" (token transfers bucket)
-    if "SECTOR" in df2.columns:
-        df2["SECTOR"] = df2["SECTOR"].replace({"NFT Transfers": "Others"})
-
-    # Aggregate in case multiple rows per (MONTH, SECTOR)
-    df2 = (
-        df2.groupby(["MONTH", "MONTH_DT", "SECTOR"], as_index=False)[
-            ["AVG_DAILY_ACTIVE_ADDRESSES", "TRANSACTIONS"]
-        ].sum()
-    )
-
-    # Controls
-    left, right = st.columns([2, 1])
-    with left:
-        metric_choice = st.radio(
-            "Metric",
-            options=["Addresses (avg daily)", "Transactions (monthly)"],
-            horizontal=True,
-        )
-    with right:
-        use_log = st.checkbox("Log scale", value=False)
-
-    # Select column
-    if metric_choice.startswith("Addresses"):
-        value_col = "AVG_DAILY_ACTIVE_ADDRESSES"
-        y_title = "Avg daily active addresses"
+if not df_active.empty:
+    # Expecting MONTH, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS
+    required = {"MONTH","SECTOR","AVG_DAILY_ACTIVE_ADDRESSES","TRANSACTIONS"}
+    missing = required - set(df_active.columns)
+    if missing:
+        st.warning(f"Active activity CSV missing columns: {', '.join(sorted(missing))}")
     else:
-        value_col = "TRANSACTIONS"
-        y_title = "Monthly transactions"
-
-    # KPIs (latest totals and top-sector share)
-    latest_dt = df2["MONTH_DT"].max()
-    snap = df2[df2["MONTH_DT"] == latest_dt].copy()
-    total_latest = float(snap[value_col].sum()) if not snap.empty else float("nan")
-    top_row = snap.loc[snap[value_col].idxmax()] if not snap.empty else None
-    top_sector = top_row["SECTOR"] if top_row is not None else "—"
-    top_share = (float(top_row[value_col]) / total_latest * 100.0) if (top_row is not None and total_latest > 0) else float("nan")
-
-    # YoY growth where possible (vs same month last year)
-    prev_year_dt = (latest_dt - pd.DateOffset(years=1)) if pd.notna(latest_dt) else None
-    yoy_total = float(
-        df2.loc[df2["MONTH_DT"] == prev_year_dt, value_col].sum()
-    ) if prev_year_dt is not None else float("nan")
-    yoy = (total_latest / yoy_total - 1.0) * 100.0 if pd.notna(yoy_total) and yoy_total > 0 else float("nan")
-
-    metrics = [
-        {"label": f"Latest total {y_title.lower()}", "value": f"{total_latest:,.0f}", "delta": (f"{yoy:,.0f}% YoY" if pd.notna(yoy) else None), "color": "#0ea5e9"},
-        {"label": "Top sector share (latest)", "value": f"{top_sector}: {top_share:,.1f}%", "delta": None, "color": "#10b981"},
-    ]
-    draw_metrics_row(metrics, cols=2)
-
-    # Chart — multi-line by sector
-    plot_df = df2.dropna(subset=["MONTH_DT", value_col]).copy()
-    # Small epsilon to avoid log-scale issues on zeros
-    eps = 1e-9
-    if use_log:
-        plot_df[value_col] = plot_df[value_col].astype(float) + eps
-
-    color_scale = alt.Scale(scheme="tableau20")
-    ch = (
-        alt.Chart(plot_df)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("MONTH_DT:T", title="Month"),
-            y=alt.Y(
-                f"{value_col}:Q",
-                title=y_title,
-                scale=alt.Scale(type="log") if use_log else alt.Scale(zero=True),
-            ),
-            color=alt.Color("SECTOR:N", title="Sector", scale=color_scale),
-            tooltip=[
-                alt.Tooltip("MONTH:T", title="Month"),
-                alt.Tooltip("SECTOR:N", title="Sector"),
-                alt.Tooltip(f"{value_col}:Q", title=y_title, format=",.0f"),
-            ],
+        # ❗ Merge NFT Transfers into Others (token transfers)
+        data = df_active.copy()
+        data["SECTOR"] = data["SECTOR"].replace({"NFT Transfers": "Others"})
+        # aggregate in case both 'Others' and 'NFT Transfers' existed for a month
+        data = (
+            data.groupby(["MONTH","SECTOR"], as_index=False)
+                .agg({
+                    "AVG_DAILY_ACTIVE_ADDRESSES": "sum",
+                    "TRANSACTIONS": "sum"
+                })
+                .sort_values(["MONTH","SECTOR"])
         )
-        .properties(height=360)
-    )
-    st.altair_chart(ch, use_container_width=True)
 
-    # Insight
-    st.markdown(
-        f"- **Insight.** {('Log scale: ' if use_log else '')}"
-        f"Latest month shows **{top_sector}** leading with **{top_share:,.1f}%** share. "
-        f"Total {y_title.lower()} sits at **{total_latest:,.0f}**, "
-        + (f"~**{yoy:,.0f}% YoY** growth." if pd.notna(yoy) else "YoY comparison not available.")
-    )
+        # UI: metric toggle
+        metric = st.radio(
+            "Metric", options=["Avg Daily Active Addresses","Transactions"],
+            horizontal=True, index=0, key="active_metric"
+        )
+        if metric == "Avg Daily Active Addresses":
+            y_col = "AVG_DAILY_ACTIVE_ADDRESSES"
+            kpi_style = KPI_STYLE["teal"]   # users
+        else:
+            y_col = "TRANSACTIONS"
+            kpi_style = KPI_STYLE["blue"]   # tx
 
-else:
-    st.warning(
-        "Section 2 data missing. Expected columns: "
-        "`MONTH, MONTH_DT, SECTOR, AVG_DAILY_ACTIVE_ADDRESSES, TRANSACTIONS`."
-    )
+        latest = data["MONTH"].max()
+        d_last = data[data["MONTH"]==latest]
 
+        # KPIs
+        peak_val = data.groupby("MONTH")[y_col].sum().max()
+        c1, c2 = st.columns(2)
+        kpi_inline(
+            c1,
+            f"<strong>Peak {metric}:</strong> <span class='v'>{peak_val:,.0f}</span>",
+            style=kpi_style
+        )
+
+        dex_share = np.nan
+        if not d_last.empty and d_last[y_col].sum() > 0:
+            dex_share = 100 * d_last.loc[d_last["SECTOR"]=="DEX Trading", y_col].sum() / d_last[y_col].sum()
+        kpi_inline(
+            c2,
+            f"<strong>DEX Trading Share (latest):</strong> <span class='v'>{(0 if pd.isna(dex_share) else dex_share):,.1f}%</span>",
+            style=KPI_STYLE["blue"]
+        )
+
+        # Fixed order (without a separate NFT Transfers; it's merged into Others)
+        desired_order = [
+            "DEX Trading",
+            "Lending Deposits",
+            "Lending Borrows",
+            "NFT Sales",
+            "Others",  # includes NFT Transfers
+        ]
+        # Keep unexpected sectors (if any) at the end
+        seen = [s for s in desired_order if s in data["SECTOR"].unique()]
+        tail = [s for s in data["SECTOR"].unique() if s not in desired_order]
+        sectors_order = seen + tail
+
+        # Colors per sector
+        sector_colors = {
+            "DEX Trading": "#1d4ed8",       # blue
+            "Lending Deposits": "#10b981",  # green
+            "Lending Borrows": "#7c3aed",   # violet
+            "NFT Sales": "#f59e0b",         # amber
+            "Others": "#64748b",            # slate  (now includes NFT Transfers)
+        }
+
+        # Plot lines per sector
+        fig2 = go.Figure()
+        for sec in sectors_order:
+            d = data[data["SECTOR"]==sec].sort_values("MONTH")
+            if d.empty:
+                continue
+            fig2.add_trace(go.Scatter(
+                x=d["MONTH"], y=d[y_col], name=sec,
+                mode="lines+markers",
+                line=dict(width=2, color=sector_colors.get(sec, None))
+            ))
+        fig2.update_layout(
+            height=420, margin=dict(l=10, r=10, t=10, b=10),
+            yaxis_title=metric,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0)
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+        insight("Both active addresses and transactions have shown strong growth over time. "
+                "Among the sectors, 'Others' — mainly token transfers (now including NFT transfers) — "
+                "emerges as one of the fastest-growing categories, underscoring its central role in on-chain activity.")
 
 # -----------------------------------------------------------
 # 3) User Activity & Sector Breadth (Merged)
@@ -1148,6 +1110,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
