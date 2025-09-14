@@ -242,10 +242,11 @@ if not df_volcat.empty:
 st.markdown("### 2) On-chain Activity & Fees")
 
 need = {"MONTH", "ACTIVE_ADDR", "TX_COUNT", "AVG_TX_FEE_USD"}
-if not need.issubset(panel.columns):
-    st.warning("Section 2: missing columns: " + ", ".join(sorted(need - set(panel.columns))))
+if not need.issubset(df.columns):
+    st.warning("Section 2: missing columns: " + ", ".join(sorted(need - set(df.columns))))
 else:
-    df2 = panel.copy()
+    df2 = df.copy()
+
     df2 = df2.sort_values("MONTH_DT")
 
     # Toggle for log scale
@@ -1086,6 +1087,7 @@ else:
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
