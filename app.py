@@ -544,7 +544,7 @@ draw_section(
     "3) Activity Drivers — Fees, ETF Flows & Rate Expectations",
     "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
     "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
-    "Ethereum recently recorded <strong>all-time-high levels of on-chain activity</strong>, "
+    "Ethereum recently recorded <strong>highest levels of on-chain activity since 2021</strong>, "
     "marking one of the busiest months in its history (see references at the end). "
     "This section investigates the <em>drivers</em> behind that surge — namely whether lower fees, stronger ETF inflows, "
     "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
@@ -553,15 +553,15 @@ draw_section(
 
 # KPIs
 c1, c2, c3, c4 = st.columns(4)
-with c1: kpi_card("Activity Index (latest)", f"{k1:,.2f}" if pd.notna(k1) else "—", "#0ea5e9")
-with c2: kpi_card("Avg Tx Fee (USD)", f"${k2:,.2f}" if pd.notna(k2) else "—", "#f59e0b")
-with c3: kpi_card("ETF Net Flow (M)", _fmt_money_m(k3), "#10b981")
+with c1: kpi_card("Activity Index (latest)", f"{k1:,.2f}" if pd.notna(k1) else "—")
+with c2: kpi_card("Avg Tx Fee (USD)", f"${k2:,.2f}" if pd.notna(k2) else "—")
+with c3: kpi_card("ETF Net Flow (M)", _fmt_money_m(k3))
 with c4:
     if pd.notna(k4_dir):
         prob_txt = f"{k4_p*100:,.0f}%" if pd.notna(k4_p) else "—"
-        kpi_card("Rates Direction", f"{k4_dir} ({prob_txt})", "#a78bfa")
+        kpi_card("Rates Direction", f"{k4_dir} ({prob_txt})")
     else:
-        kpi_card("Rates Direction", "—", "#a78bfa")
+        kpi_card("Rates Direction", "—")
 
 # --- Charts
 alt.data_transformers.disable_max_rows()
@@ -973,7 +973,7 @@ st.markdown("### References & Data Sources")
 
 st.markdown(
     """
-- **Ethereum activity ATH**  
+- **Ethereum activity surges**  
   [Crypto.com Research Roundup — Sep 2025](https://crypto.com/us/research/research-roundup-sep-2025)  
   [CryptoRank — Why Ethereum just posted its third biggest month in history](https://cryptorank.io/news/feed/d31b4-why-ethereum-just-posted-its-third-biggest-month-in-history)
 
@@ -985,7 +985,7 @@ st.markdown(
   [Farside Investors — Ethereum ETF Flows](https://farside.co.uk/eth/?utm_source=chatgpt.com)
 
 - **On-chain data provider**  
-  Flipside Crypto
+  [FlipsideCrypto](https://flipsidecrypto.xyz)
     """
 )
 
@@ -995,7 +995,8 @@ st.markdown(
 # Footer
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
-st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
