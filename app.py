@@ -762,53 +762,61 @@ etf_bar = alt.Chart(ts).mark_bar(opacity=0.35, color="#10b981").encode(
 chart_ts = alt.layer(left, fee_line, etf_bar).resolve_scale(y="independent").properties(height=360)
 st.altair_chart(chart_ts, use_container_width=True)
 
-# 8B-L) Activity vs Fees (scatter + regression)
-if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
-    corr_df = panel.dropna(subset=["ACTIVITY_INDEX","AVG_TX_FEE_USD"])[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]]
-    c = alt.Chart(corr_df).mark_circle(size=70, opacity=0.7, color="#f59e0b").encode(
-        x=alt.X("AVG_TX_FEE_USD:Q", title="Avg Tx Fee (USD)"),
-        y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-        tooltip=[
-            alt.Tooltip("AVG_TX_FEE_USD:Q", title="Fee (USD)", format=",.2f"),
-            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
-        ],
-    )
-    reg = c.transform_regression("AVG_TX_FEE_USD", "ACTIVITY_INDEX").mark_line(color="#111827")
-    st.altair_chart((c + reg).properties(height=320), use_container_width=True)
-else:
-    st.info("Need ACTIVITY_INDEX and AVG_TX_FEE_USD to plot activity vs fees.")
+# ---- 8B) Drivers vs Activity — interactive scatter + regression ----
+st.markdown("### 8B) Drivers vs Activity — what’s moving on-chain usage?")
+st.caption("Select a driver to compare against the Activity Index. The fitted line is an ordinary least squares trend.")
 
-# 8B-R) Activity vs ETF Flows (scatter + regression)
-if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
-    corr_df2 = panel.dropna(subset=["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"])[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]]
-    c = alt.Chart(corr_df2).mark_circle(size=70, opacity=0.7, color="#10b981").encode(
-        x=alt.X("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Net Flow (USD M)"),
-        y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
-        tooltip=[
-            alt.Tooltip("ETF_NET_FLOW_USD_MILLIONS:Q", title="ETF Flow (M)", format=",.0f"),
-            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
-        ],
-    )
-    reg = c.transform_regression("ETF_NET_FLOW_USD_MILLIONS", "ACTIVITY_INDEX").mark_line(color="#065f46")
-    st.altair_chart((c + reg).properties(height=320), use_container_width=True)
-else:
-    st.info("Need ACTIVITY_INDEX and ETF_NET_FLOW_USD_MILLIONS to plot activity vs ETF flows.")
+# Human labels → (panel column, x-axis title, tooltip title)
+driver_options = {
+    "Avg Tx Fee (USD)": ("AVG_TX_FEE_USD", "Avg Tx Fee (USD)", "Fee (USD)"),
+    "ETF Net Flow (USD M)": ("ETF_NET_FLOW_USD_MILLIONS", "ETF Net Flow (USD M)", "ETF Flow (M)"),
+    "Rates — Cut Probability (%)": ("PROB_CUT", "Cut Probability (%)", "Cut Prob (%)"),
+    "Rates — Hike Probability (%)": ("PROB_HIKE", "Hike Probability (%)", "Hike Prob (%)"),
+    "ETH Price (USD)": ("AVG_ETH_PRICE_USD", "ETH Price (USD)", "ETH Price (USD)"),
+}
 
-# 8C) Activity vs Price (scatter + regression)
-if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
-    df_ap = panel.dropna(subset=["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"])[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]]
-    c = alt.Chart(df_ap).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
-        x=alt.X("ACTIVITY_INDEX:Q", title="Activity Index"),
-        y=alt.Y("AVG_ETH_PRICE_USD:Q", title="ETH Price (USD)"),
-        tooltip=[
-            alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
-            alt.Tooltip("AVG_ETH_PRICE_USD:Q", title="Price (USD)", format=",.2f"),
-        ],
-    )
-    reg = c.transform_regression("ACTIVITY_INDEX","AVG_ETH_PRICE_USD").mark_line(color="#1f2937")
-    st.altair_chart((c + reg).properties(height=320), use_container_width=True)
+choice = st.selectbox("Driver", list(driver_options.keys()), index=0)
+col_x, x_title, tip_title = driver_options[choice]
+
+# Prepare data safely
+need_cols = ["MONTH", "MONTH_DT", "ACTIVITY_INDEX", col_x]
+if not set(need_cols).issubset(panel.columns):
+    missing = [c for c in need_cols if c not in panel.columns]
+    st.warning(f"Missing columns for this view: {', '.join(missing)}")
 else:
-    st.info("Need ACTIVITY_INDEX and AVG_ETH_PRICE_USD to show price vs activity.")
+    df_drv = panel[need_cols].copy()
+
+    # Coerce numeric just in case (avoids 'isfinite' and schema errors)
+    df_drv[col_x] = pd.to_numeric(df_drv[col_x], errors="coerce")
+    df_drv["ACTIVITY_INDEX"] = pd.to_numeric(df_drv["ACTIVITY_INDEX"], errors="coerce")
+    df_drv = df_drv.dropna(subset=[col_x, "ACTIVITY_INDEX", "MONTH_DT"])
+
+    if df_drv.empty:
+        st.info("No overlapping data points to plot.")
+    else:
+        # Scatter + regression line
+        scatter = alt.Chart(df_drv).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
+            x=alt.X(f"{col_x}:Q", title=x_title),
+            y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
+            tooltip=[
+                alt.Tooltip("MONTH:N", title="Month"),
+                alt.Tooltip(f"{col_x}:Q", title=tip_title, format=",.2f"),
+                alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
+            ],
+        )
+
+        reg = scatter.transform_regression(col_x, "ACTIVITY_INDEX").mark_line(color="#111827")
+
+        st.altair_chart((scatter + reg).properties(height=340), use_container_width=True)
+
+        # Small textual cue: directionality over the last 3 months (if present)
+        tail = df_drv.sort_values("MONTH_DT").tail(3)
+        if len(tail) >= 2:
+            dx = tail[col_x].iloc[-1] - tail[col_x].iloc[0]
+            dy = tail["ACTIVITY_INDEX"].iloc[-1] - tail["ACTIVITY_INDEX"].iloc[0]
+            trend_x = "↑" if dx > 0 else ("↓" if dx < 0 else "→")
+            trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
+            st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
 
 
 # --- Insight line
@@ -836,6 +844,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside/Dune exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
