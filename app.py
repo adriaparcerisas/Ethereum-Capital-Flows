@@ -143,7 +143,7 @@ df_cohort   = read_csv("user_cohort.csv")          # MONTH, COHORT, UNIQUE_USERS
 df_typology = read_csv("user_typology.csv")        # MONTH, USER_TYPE, ACTIVITY_LEVEL, UNIQUE_USERS, AVG_VOLUME_PER_USER, AVG_TRANSACTIONS_PER_USER
 df_dex      = read_csv("dex_volume.csv")           # MONTH, ACTIVE_SWAPPERS, TOTAL_VOLUME_USD, TOTAL_VOLUME_BILLIONS, AVG_SWAP_SIZE, TOTAL_SWAPS
 df_bridge   = read_csv("bridged_volume.csv")       # MONTH, INFLOW_BILLIONS, OUTFLOW_BILLIONS, NET_FLOW_BILLIONS, UNKNOWN_FLOW_BILLIONS, TOTAL_BRIDGE_VOLUME_BILLIONS
-df_eth      = read_csv("eth_price.csv")            # MONTH, AVG_ETH_PRICE_USD, TOTAL_TRANSACTIONS, UNIQUE_USERS, TOTAL_VOLUME_BILLIONS, ACTIVITY_INDEX
+df_eth      = read_csv("eth_price.csv")            # MONTH, AVG_ETH_PRICE_USD, TOTAL_TRANSACTIONS, UNIQUE_USERS, TOTAL_VOLUME_BILLIONS, ACTIVITY_INDEX_ZSCORE
 df_lend     = read_csv("lending_deposits.csv")     # MONTH, PLATFORM, UNIQUE_DEPOSITORS, TOTAL_DEPOSIT_VOLUME, VOLUME_BILLIONS, AVG_DEPOSIT_SIZE, MONTHLY_TOTAL_BILLIONS, PLATFORM_MARKET_SHARE
 df_fees     = read_csv("fees_activity.csv")        # MONTH, AVG_FEE_USD, FEE_CATEGORY, TOTAL_TRANSACTIONS, UNIQUE_USERS, TRANSACTIONS_MILLIONS, USERS_MILLIONS, ...
 def load_active_activity(path="data/active_addresses.csv"):
@@ -515,7 +515,7 @@ if not fees_p.empty:
 
 # ETH price & activity
 if not eth_p.empty:
-    keep_cols = [c for c in ["MONTH","ACTIVITY_INDEX","AVG_ETH_PRICE_USD"] if c in eth_p.columns]
+    keep_cols = [c for c in ["MONTH","ACTIVITY_INDEX_ZSCORE","AVG_ETH_PRICE_USD"] if c in eth_p.columns]
     eth_p = eth_p[keep_cols].drop_duplicates("MONTH")
 
 # ETF flows (monthly sums)
@@ -572,13 +572,13 @@ panel = panel.sort_values("MONTH_DT")
 cutoff = pd.to_datetime("2025-08")
 panel = panel[panel["MONTH_DT"] <= cutoff]
 
-for c in ["ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS","AVG_ETH_PRICE_USD"]:
+for c in ["ACTIVITY_INDEX_ZSCORE","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS","AVG_ETH_PRICE_USD"]:
     if c in panel.columns:
         panel[c] = pd.to_numeric(panel[c], errors="coerce")
 
 # Latest row for KPIs
 latest = panel.dropna(subset=["MONTH_DT"]).tail(1).squeeze()
-k1 = latest["ACTIVITY_INDEX"] if "ACTIVITY_INDEX" in panel.columns else np.nan
+k1 = latest["ACTIVITY_INDEX_ZSCORE"] if "ACTIVITY_INDEX_ZSCORE" in panel.columns else np.nan
 k2 = latest["AVG_TX_FEE_USD"] if "AVG_TX_FEE_USD" in panel.columns else np.nan
 k3 = latest["ETF_NET_FLOW_USD_MILLIONS"] if "ETF_NET_FLOW_USD_MILLIONS" in panel.columns else np.nan
 k4_dir = latest["RATES_DIR"] if "RATES_DIR" in panel.columns else np.nan
@@ -617,15 +617,15 @@ st.markdown("")
 st.markdown("")
 st.markdown("**Chart A: Activity vs Fees & ETF flows**")
 
-ts_cols = [c for c in ["MONTH","MONTH_DT","ACTIVITY_INDEX","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS"] if c in panel.columns]
+ts_cols = [c for c in ["MONTH","MONTH_DT","ACTIVITY_INDEX_ZSCORE","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS"] if c in panel.columns]
 ts = panel[ts_cols].dropna(subset=["MONTH_DT"]).copy()
 
 left = alt.Chart(ts).mark_line(point=False, color="#0ea5e9").encode(
     x=alt.X("MONTH_DT:T", title="Month"),
-    y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index", axis=alt.Axis(grid=True)),
+    y=alt.Y("ACTIVITY_INDEX_ZSCORE:Q", title="Activity Index", axis=alt.Axis(grid=True)),
     tooltip=[
         alt.Tooltip("MONTH:N", title="Month"),
-        alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f")
+        alt.Tooltip("ACTIVITY_INDEX_ZSCORE:Q", title="Activity", format=",.2f")
     ],
 )
 
@@ -646,14 +646,14 @@ st.altair_chart(chart_ts, use_container_width=True)
 
 # --- Insight line
 insights = []
-if set(["ACTIVITY_INDEX","AVG_TX_FEE_USD"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","AVG_TX_FEE_USD"]].corr().iloc[0,1]
+if set(["ACTIVITY_INDEX_ZSCORE","AVG_TX_FEE_USD"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX_ZSCORE","AVG_TX_FEE_USD"]].corr().iloc[0,1]
     if pd.notna(r): insights.append(f"Activity vs Fees corr: {r:+.2f} (usually negative).")
-if set(["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","ETF_NET_FLOW_USD_MILLIONS"]].corr().iloc[0,1]
+if set(["ACTIVITY_INDEX_ZSCORE","ETF_NET_FLOW_USD_MILLIONS"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX_ZSCORE","ETF_NET_FLOW_USD_MILLIONS"]].corr().iloc[0,1]
     if pd.notna(r): insights.append(f"Activity vs ETF Flows corr: {r:+.2f}.")
-if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
-    r = panel[["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]].corr().iloc[0,1]
+if set(["ACTIVITY_INDEX_ZSCORE","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
+    r = panel[["ACTIVITY_INDEX_ZSCORE","AVG_ETH_PRICE_USD"]].corr().iloc[0,1]
     if pd.notna(r): insights.append(f"Price vs Activity corr: {r:+.2f}.")
 
 insight("Lower fees and positive ETF net flows tend to coincide with stronger activity. Policy leaning (cut vs. hold) is a secondary tailwind when aligned with cheap execution.")
@@ -684,7 +684,7 @@ choice = st.selectbox("Driver", list(driver_options.keys()), index=0)
 col_x, x_title, tip_title = driver_options[choice]
 
 # Prepare data safely
-need_cols = ["MONTH", "MONTH_DT", "ACTIVITY_INDEX", col_x]
+need_cols = ["MONTH", "MONTH_DT", "ACTIVITY_INDEX_ZSCORE", col_x]
 if not set(need_cols).issubset(panel.columns):
     missing = [c for c in need_cols if c not in panel.columns]
     st.warning(f"Missing columns for this view: {', '.join(missing)}")
@@ -693,23 +693,23 @@ else:
 
     # Coerce numeric just in case
     df_drv[col_x] = pd.to_numeric(df_drv[col_x], errors="coerce")
-    df_drv["ACTIVITY_INDEX"] = pd.to_numeric(df_drv["ACTIVITY_INDEX"], errors="coerce")
-    df_drv = df_drv.dropna(subset=[col_x, "ACTIVITY_INDEX", "MONTH_DT"])
+    df_drv["ACTIVITY_INDEX_ZSCORE"] = pd.to_numeric(df_drv["ACTIVITY_INDEX_ZSCORE"], errors="coerce")
+    df_drv = df_drv.dropna(subset=[col_x, "ACTIVITY_INDEX_ZSCORE", "MONTH_DT"])
 
     if df_drv.empty:
         st.info("No overlapping data points to plot.")
     else:
         scatter = alt.Chart(df_drv).mark_circle(size=70, opacity=0.7, color="#0ea5e9").encode(
             x=alt.X(f"{col_x}:Q", title=x_title),
-            y=alt.Y("ACTIVITY_INDEX:Q", title="Activity Index"),
+            y=alt.Y("ACTIVITY_INDEX_ZSCORE:Q", title="Activity Index"),
             tooltip=[
                 alt.Tooltip("MONTH:N", title="Month"),
                 alt.Tooltip(f"{col_x}:Q", title=tip_title, format=",.2f"),
-                alt.Tooltip("ACTIVITY_INDEX:Q", title="Activity", format=",.2f"),
+                alt.Tooltip("ACTIVITY_INDEX_ZSCORE:Q", title="Activity", format=",.2f"),
             ],
         )
 
-        reg = scatter.transform_regression(col_x, "ACTIVITY_INDEX").mark_line(color="#111827")
+        reg = scatter.transform_regression(col_x, "ACTIVITY_INDEX_ZSCORE").mark_line(color="#111827")
 
         st.altair_chart((scatter + reg).properties(height=340), use_container_width=True)
 
@@ -717,7 +717,7 @@ else:
         tail = df_drv.sort_values("MONTH_DT").tail(3)
         if len(tail) >= 2:
             dx = tail[col_x].iloc[-1] - tail[col_x].iloc[0]
-            dy = tail["ACTIVITY_INDEX"].iloc[-1] - tail["ACTIVITY_INDEX"].iloc[0]
+            dy = tail["ACTIVITY_INDEX_ZSCORE"].iloc[-1] - tail["ACTIVITY_INDEX_ZSCORE"].iloc[0]
             trend_x = "↑" if dx > 0 else ("↓" if dx < 0 else "→")
             trend_y = "↑" if dy > 0 else ("↓" if dy < 0 else "→")
             st.caption(f"Recent trend (last 3 obs): {x_title} {trend_x}, Activity {trend_y}.")
@@ -740,7 +740,7 @@ if not df_eth.empty:
     price_min, price_max = df_eth["AVG_ETH_PRICE_USD"].min(), df_eth["AVG_ETH_PRICE_USD"].max()
     corr = np.corrcoef(
         df_eth["AVG_ETH_PRICE_USD"].astype(float),
-        df_eth["ACTIVITY_INDEX"].astype(float)
+        df_eth["ACTIVITY_INDEX_ZSCORE"].astype(float)
     )[0,1] if len(df_eth)>1 else np.nan
 
     c1, c2 = st.columns(2)
@@ -751,7 +751,7 @@ if not df_eth.empty:
     fig7.add_trace(go.Scatter(x=df_eth["MONTH"], y=df_eth["AVG_ETH_PRICE_USD"],
                               name="ETH Price (USD)", mode="lines+markers",
                               line=dict(color="#1d4ed8", width=2)))
-    fig7.add_trace(go.Scatter(x=df_eth["MONTH"], y=df_eth["ACTIVITY_INDEX"],
+    fig7.add_trace(go.Scatter(x=df_eth["MONTH"], y=df_eth["ACTIVITY_INDEX_ZSCORE"],
                               name="Activity Index", mode="lines+markers",
                               line=dict(color="#14b8a6", width=3, dash="dot")),
                    secondary_y=True)
@@ -773,7 +773,7 @@ draw_section(
 )
 
 need = {
-    "MONTH", "ACTIVITY_INDEX", "AVG_TX_FEE_USD",
+    "MONTH", "ACTIVITY_INDEX_ZSCORE", "AVG_TX_FEE_USD",
     "ETF_NET_FLOW_USD_MILLIONS", "RATES_PROB", "AVG_ETH_PRICE_USD"
 }
 if not need.issubset(panel.columns):
@@ -794,7 +794,7 @@ else:
     #        df = df.iloc[:-1]
 
     # --- numeric coercion
-    y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
+    y = pd.to_numeric(df["ACTIVITY_INDEX_ZSCORE"], errors="coerce")
     price = pd.to_numeric(df["AVG_ETH_PRICE_USD"], errors="coerce")
     Xraw = pd.DataFrame({
         "etf":  pd.to_numeric(df["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"),
@@ -1017,6 +1017,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
