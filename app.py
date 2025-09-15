@@ -344,8 +344,53 @@ if not df_active.empty:
         insight("Breadth and load trend higher. ‘Others’ (token transfers, incl. NFT transfers) is among the fastest-growing segments, while DEX trading and lending remain the cyclical anchors of network demand.")
 
 
+# -----------------------------------------------------------
+# 3) User Adoption During Fee Evolution
+# -----------------------------------------------------------
+#draw_section(
+#    "Fee Sensitivity — User Adoption During Fee Evolution",
+#    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
+#)
+draw_section(
+    "3. User Adoption During Fee Evolution",
+    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
+)
+#st.markdown("")
+#st.markdown("")
+#st.markdown("**Chart B: User Adoption During Fee Evolution:** Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base.")
+
+if not df_fees.empty:
+    # collapse to monthly totals (if multiple FEE_CATEGORY rows)
+    agg = df_fees.groupby("MONTH", as_index=False).agg({
+        "USERS_MILLIONS":"sum",
+        "AVG_FEE_USD":"mean"
+    }).sort_values("MONTH")
+
+    # KPIs
+    growth_users = 100 * (agg.iloc[-1]["USERS_MILLIONS"] - agg.iloc[0]["USERS_MILLIONS"]) / max(agg.iloc[0]["USERS_MILLIONS"], 1e-9)
+    fee_change   = 100 * (agg.iloc[-1]["AVG_FEE_USD"] - agg.iloc[0]["AVG_FEE_USD"]) / max(agg.iloc[0]["AVG_FEE_USD"], 1e-9)
+
+    c1, c2 = st.columns(2)
+    kpi_inline(c1, f"<strong>User Growth:</strong> <span class='v'>{growth_users:,.1f}%</span>", style=KPI_STYLE["teal"])
+    kpi_inline(c2, f"<strong>Fee Change:</strong> <span class='v'>{fee_change:,.1f}%</span>", style=KPI_STYLE["blue"])
+
+    fig8 = make_subplots(specs=[[{"secondary_y": True}]])
+    fig8.add_trace(go.Scatter(x=agg["MONTH"], y=agg["USERS_MILLIONS"],
+                              name="Unique Users (M)", mode="lines+markers",
+                              line=dict(color="#7c3aed", width=3)))
+    fig8.add_trace(go.Scatter(x=agg["MONTH"], y=agg["AVG_FEE_USD"],
+                              name="Average Fee (USD)", mode="lines+markers",
+                              line=dict(color="#f59e0b", width=2, dash="dash")),
+                   secondary_y=True)
+    fig8.update_yaxes(title_text="Users (Millions)", secondary_y=False)
+    fig8.update_yaxes(title_text="Avg Fee (USD)", secondary_y=True, showgrid=False)
+    fig8.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
+    st.plotly_chart(fig8, use_container_width=True)
+
+insight("User growth accelerates when average fees compress. Spikes in fees are typically followed by softer user growth, consistent with a price-of-blockspace constraint on mainstream adoption.")
+
 # ================================
-# 3) Activity Drivers — Fees, ETF Flows & Rates Direction
+# 4) Activity Drivers — Fees, ETF Flows & Rates Direction
 # ================================
 import os, pandas as pd, numpy as np, altair as alt, streamlit as st
 
@@ -503,7 +548,7 @@ for d in [eth_p, fees_p, etf_m, rates_m]:
 # STOP if empty
 if panel is None or panel.empty:
     draw_section(
-        "3. Activity Drivers — Fees, ETF Flows & Rates Direction",
+        "4. Activity Drivers — Fees, ETF Flows & Rates Direction",
         definition=(
         "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
         "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
@@ -541,7 +586,7 @@ k4_p   = latest["RATES_PROB"] if "RATES_PROB" in panel.columns else np.nan
 
 # --- Render section
 draw_section(
-    "3) Activity Drivers — Fees, ETF Flows & Rate Expectations",
+    "4) Activity Drivers — Fees, ETF Flows & Rate Expectations",
     "Relates <strong>transaction costs</strong>, <strong>ETF net flows</strong> and "
     "<strong>policy direction</strong> to Ethereum’s on-chain activity. "
     "Ethereum recently recorded <strong>highest levels of on-chain activity since 2021</strong>, "
@@ -567,7 +612,7 @@ with c4:
 alt.data_transformers.disable_max_rows()
 
 
-# 3A) Time series — Activity vs Fees & ETF flows
+# 4A) Time series — Activity vs Fees & ETF flows
 st.markdown("")
 st.markdown("")
 st.markdown("**Chart A: Activity vs Fees & ETF flows**")
@@ -614,59 +659,17 @@ if set(["ACTIVITY_INDEX","AVG_ETH_PRICE_USD"]).issubset(panel.columns):
 insight("Lower fees and positive ETF net flows tend to coincide with stronger activity. Policy leaning (cut vs. hold) is a secondary tailwind when aligned with cheap execution.")
 
 
-
 # -----------------------------------------------------------
-# 3B) User Adoption During Fee Evolution
-# -----------------------------------------------------------
-#draw_section(
-#    "Fee Sensitivity — User Adoption During Fee Evolution",
-#    "Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base."
-#)
-st.markdown("")
-st.markdown("")
-st.markdown("**Chart B: User Adoption During Fee Evolution:** Overlay unique users (millions) with average fee (USD). Tests whether affordability expands the user base.")
-
-if not df_fees.empty:
-    # collapse to monthly totals (if multiple FEE_CATEGORY rows)
-    agg = df_fees.groupby("MONTH", as_index=False).agg({
-        "USERS_MILLIONS":"sum",
-        "AVG_FEE_USD":"mean"
-    }).sort_values("MONTH")
-
-    # KPIs
-    growth_users = 100 * (agg.iloc[-1]["USERS_MILLIONS"] - agg.iloc[0]["USERS_MILLIONS"]) / max(agg.iloc[0]["USERS_MILLIONS"], 1e-9)
-    fee_change   = 100 * (agg.iloc[-1]["AVG_FEE_USD"] - agg.iloc[0]["AVG_FEE_USD"]) / max(agg.iloc[0]["AVG_FEE_USD"], 1e-9)
-
-    c1, c2 = st.columns(2)
-    kpi_inline(c1, f"<strong>User Growth:</strong> <span class='v'>{growth_users:,.1f}%</span>", style=KPI_STYLE["teal"])
-    kpi_inline(c2, f"<strong>Fee Change:</strong> <span class='v'>{fee_change:,.1f}%</span>", style=KPI_STYLE["blue"])
-
-    fig8 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig8.add_trace(go.Scatter(x=agg["MONTH"], y=agg["USERS_MILLIONS"],
-                              name="Unique Users (M)", mode="lines+markers",
-                              line=dict(color="#7c3aed", width=3)))
-    fig8.add_trace(go.Scatter(x=agg["MONTH"], y=agg["AVG_FEE_USD"],
-                              name="Average Fee (USD)", mode="lines+markers",
-                              line=dict(color="#f59e0b", width=2, dash="dash")),
-                   secondary_y=True)
-    fig8.update_yaxes(title_text="Users (Millions)", secondary_y=False)
-    fig8.update_yaxes(title_text="Avg Fee (USD)", secondary_y=True, showgrid=False)
-    fig8.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10))
-    st.plotly_chart(fig8, use_container_width=True)
-
-insight("User growth accelerates when average fees compress. Spikes in fees are typically followed by softer user growth, consistent with a price-of-blockspace constraint on mainstream adoption.")
-
-# -----------------------------------------------------------
-# ---- 3C) Drivers vs Activity — interactive scatter + regression ----
+# ---- 4B) Drivers vs Activity — interactive scatter + regression ----
 # -----------------------------------------------------------
 
 #draw_section(
-#    "3C) What Maps to Activity? — Driver vs Activity",
+#    "4B) What Maps to Activity? — Driver vs Activity",
 #    "Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations."
 #)
 st.markdown("")
 st.markdown("")
-st.markdown("**Chart C: What Maps to Activity? — Driver vs Activity**: Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
+st.markdown("**Chart B: What Maps to Activity? — Driver vs Activity**: Choose a driver to compare against the Activity Index; the fitted line is OLS. The ‘Recent trend’ note reflects the last three observations.")
 
 
 # Human labels → (panel column, x-axis title, tooltip title)
@@ -725,10 +728,10 @@ insight("The slope quantifies sensitivity. Negative slope for fees (cheaper → 
 
 
 # -----------------------------------------------------------
-# 4) ETH Price Overlay with Activity Index
+# 5) ETH Price Overlay with Activity Index
 # -----------------------------------------------------------
 draw_section(
-    "4) Price Linkage — ETH Price vs Activity Index",
+    "5) Price Linkage — ETH Price vs Activity Index",
     "Compares average ETH price (USD) to a composite activity index. Co-movement suggests fundamental participation; divergences can flag speculative or efficiency phases."
 )
 
@@ -761,11 +764,11 @@ insight("Price and activity generally co-move. Short stretches of divergence oft
 
 
 # ================================
-# 5) Macro-Chain Impulse (MCIS)
+# 6) Macro-Chain Impulse (MCIS)
 # ================================
 
 draw_section(
-    "5) Macro-Chain Impulse (MCIS) — composite driver of on-chain activity & price",
+    "6) Macro-Chain Impulse (MCIS) — composite driver of on-chain activity & price",
     "MCIS z-scores and stacks three standardized drivers with small lags: +ETF net flows, +rate-cut probability, and −fees (made positive). Weights are ridge-estimated with a 5% per-factor floor and renormalization."
 )
 
@@ -1014,6 +1017,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
