@@ -965,6 +965,24 @@ else:
             "red marks **≤ −1σ** (headwind)."
         )
 
+# ================================
+# Key Takeaways
+# ================================
+
+st.markdown("### Conclusion: Key Takeaways")
+st.markdown("""
+- Ethereum just hit a new high in on-chain USD volume (~$341B, August 2025) since May 2021, 
+  with broadening activity across sectors.
+- Positive ETF flows and lower fees supported this surge, showing that 
+  affordability + external demand are critical drivers.
+- The Macro-Chain Impulse Score (MCIS) is currently in **tailwind regime**, 
+  suggesting that macro conditions remain supportive, although limited history 
+  makes results fragile.
+- Panel discussion should focus on whether this demand is durable, and how much 
+  capital concentration vs broad adoption is taking place.
+""")
+
+
 
 # ================================
 # References & Data Sources
@@ -996,6 +1014,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
