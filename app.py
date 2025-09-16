@@ -104,7 +104,7 @@ KPI_STYLE = {
 # Title + Executive Summary (whole text inside "context" box)
 # -----------------------------------------------------------
 st.markdown(
-    "<h1>Ethereum On-Chain Traction at New High — Capital Flows & User Dynamics</h1>",
+    "<h1>Ethereum On-Chain Traction — Capital Flows & User Dynamics</h1>",
     unsafe_allow_html=True
 )
 st.caption("Data as of most recent month available")
@@ -1189,6 +1189,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
