@@ -806,7 +806,7 @@ else:
     if Xraw["rate"].dropna().max() > 1.00001:
         Xraw["rate"] = Xraw["rate"] / 100.0
 
-    # --- choose lags (0..2) that maximize |corr| with activity
+    # --- to choose lags (0..2) that maximize |corr| with activity
     lags = {}
     for col, sign in [("etf", +1), ("rate", +1), ("fee", -1)]:
         best_lag, best_score = 0, -np.inf
@@ -912,7 +912,7 @@ else:
                              w_{\text{rate}} \cdot z\big(\text{RATES\_PROB}_{t-L_{\text{rate}}}\big) \;+\;
                              w_{\text{fee}} \cdot z\big(-\,\text{AVG\_TX\_FEE\_USD}_{t-L_{\text{fee}}}\big)
             """)
-            st.caption("We pick small lags L ∈ {0,1,2} per driver (max signed corr with activity), "
+            st.caption("I pick small lags L ∈ {0,1,2} per driver (max signed corr with activity), "
                        "z-score each series, flip fees so higher=better, learn ridge-stabilized non-negative "
                        "weights (with a small per-factor floor), then z-score MCIS for readability.")
         
@@ -1174,6 +1174,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
