@@ -794,7 +794,7 @@ else:
     #        df = df.iloc[:-1]
 
     # --- numeric coercion
-    y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
+    y = pd.to_numeric(df["ACTIVITY_INDEX_ZSCORE"], errors="coerce")
     price = pd.to_numeric(df["AVG_ETH_PRICE_USD"], errors="coerce")
 
     # raw drivers
@@ -1189,6 +1189,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
