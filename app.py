@@ -902,6 +902,163 @@ else:
         if len(data) < 6:
             st.caption("⚠️ Very few months of history, results fragile!")
 
+        # -------------------------------------------
+        # MCIS — "How it's calculated" (expander)
+        # -------------------------------------------
+        with st.expander("🧪 How MCIS is calculated (methods, lags, weights, code)"):
+            st.markdown("**Definition (intution → math)**")
+            st.latex(r"""
+            \text{MCIS}_t = w_{\text{etf}} \cdot z\big(\text{ETF\_FLOW}_{t-L_{\text{etf}}}\big) \;+\;
+                             w_{\text{rate}} \cdot z\big(\text{RATES\_PROB}_{t-L_{\text{rate}}}\big) \;+\;
+                             w_{\text{fee}} \cdot z\big(-\,\text{AVG\_TX\_FEE\_USD}_{t-L_{\text{fee}}}\big)
+            """)
+            st.caption("We pick small lags L ∈ {0,1,2} per driver (max signed corr with activity), "
+                       "z-score each series, flip fees so higher=better, learn ridge-stabilized non-negative "
+                       "weights (with a small per-factor floor), then z-score MCIS for readability.")
+        
+            # ---- show lags & weights actually used
+            try:
+                # Use existing variables if present
+                _lags = lags if 'lags' in locals() else None
+                _weights = weights if 'weights' in locals() else None
+                _mcis = MCISz if 'MCISz' in locals() else None
+            except NameError:
+                _lags = _weights = _mcis = None
+        
+            # Fallback recompute if needed
+            if _lags is None or _weights is None or _mcis is None:
+                # Minimal recompute using current panel
+                req = {"MONTH","AVG_TX_FEE_USD","ETF_NET_FLOW_USD_MILLIONS","RATES_PROB","ACTIVITY_INDEX"}
+                if req.issubset(panel.columns):
+                    dfm = panel.copy()
+                    dfm["MONTH_DT"] = pd.to_datetime(dfm["MONTH"], errors="coerce")
+                    dfm = dfm.sort_values("MONTH_DT").set_index("MONTH_DT")
+        
+                    y = pd.to_numeric(dfm["ACTIVITY_INDEX"], errors="coerce")
+                    X = pd.DataFrame({
+                        "etf":  pd.to_numeric(dfm["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"),
+                        "rate": pd.to_numeric(dfm["RATES_PROB"], errors="coerce"),
+                        "fee":  pd.to_numeric(dfm["AVG_TX_FEE_USD"], errors="coerce")
+                    }, index=dfm.index)
+                    if X["rate"].dropna().max() > 1.0:
+                        X["rate"] = X["rate"]/100.0
+        
+                    # pick lags
+                    _lags = {}
+                    for col, sign in [("etf", +1), ("rate", +1), ("fee", -1)]:
+                        best_L, best = 0, -np.inf
+                        for L in (0,1,2):
+                            c = pd.concat([y, X[col].shift(L)], axis=1).corr().iloc[0,1]
+                            if pd.notna(c) and abs(c*sign) > best:
+                                best, best_L = abs(c*sign), L
+                        _lags[col] = best_L
+        
+                    # lag, flip fee, z-score
+                    Xlag = pd.DataFrame({c: X[c].shift(_lags[c]) for c in X.columns}, index=X.index)
+                    Xlag["fee"] = -Xlag["fee"]
+                    Z = (Xlag - Xlag.mean())/Xlag.std(ddof=0)
+                    data = pd.concat([Z, y.rename("y")], axis=1).dropna()
+        
+                    # ridge + clamp + floor
+                    Zfit, yfit = data[["etf","rate","fee"]], data["y"]
+                    XtX = Zfit.T @ Zfit
+                    lam = 1.0
+                    w = np.linalg.solve(XtX + lam*np.eye(3), Zfit.T @ yfit)
+                    _weights = pd.Series(w, index=["etf","rate","fee"]).clip(lower=0)
+                    if _weights.sum() <= 1e-12 or (_weights<=1e-12).all():
+                        _weights = pd.Series([1/3,1/3,1/3], index=["etf","rate","fee"])
+                    else:
+                        _weights = _weights/_weights.sum()
+                    floor = 0.05
+                    _weights = (1 - floor*3)*_weights + floor
+                    _weights = _weights/_weights.sum()
+        
+                    mcis_raw = (Zfit @ _weights).rename("MCIS")
+                    _mcis = (mcis_raw - mcis_raw.mean())/mcis_raw.std(ddof=0)
+                else:
+                    st.warning("Not enough columns to recompute MCIS inside the expander.")
+                    _lags, _weights, _mcis = {}, pd.Series(dtype=float), pd.Series(dtype=float)
+        
+            # Display lags & weights
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("**Selected lags (months)**")
+                if _lags:
+                    st.table(pd.DataFrame.from_dict(_lags, orient="index", columns=["Lag (m)"]))
+                else:
+                    st.write("—")
+        
+            with col_b:
+                st.markdown("**Weights (normalized)**")
+                if not _weights.empty:
+                    st.table(_weights.rename("Weight").to_frame().assign(Percent=lambda d: (d["Weight"]*100).round(1)))
+                else:
+                    st.write("—")
+        
+            st.markdown("**Reproducible function (Python)**")
+            st.code(
+                '''
+        def compute_mcis(panel, lam=1.0, min_weight=0.05):
+            import numpy as np, pandas as pd
+            df = panel.copy()
+            df["MONTH_DT"] = pd.to_datetime(df["MONTH"], errors="coerce")
+            df = df.sort_values("MONTH_DT").set_index("MONTH_DT")
+            y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
+            X = pd.DataFrame({
+                "etf":  pd.to_numeric(df["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"),
+                "rate": pd.to_numeric(df["RATES_PROB"], errors="coerce"),
+                "fee":  pd.to_numeric(df["AVG_TX_FEE_USD"], errors="coerce"),
+            }, index=df.index)
+            if X["rate"].dropna().max() > 1.0:
+                X["rate"] = X["rate"]/100.0
+            lags = {}
+            for col, sign in [("etf",+1),("rate",+1),("fee",-1)]:
+                best_L, best = 0, -np.inf
+                for L in (0,1,2):
+                    c = pd.concat([y, X[col].shift(L)], axis=1).corr().iloc[0,1]
+                    if pd.notna(c) and abs(c*sign) > best:
+                        best, best_L = abs(c*sign), L
+                lags[col] = best_L
+            Xlag = pd.DataFrame({c: X[c].shift(lags[c]) for c in X.columns}, index=X.index)
+            Xlag["fee"] = -Xlag["fee"]
+            Z = (Xlag - Xlag.mean())/Xlag.std(ddof=0)
+            data = pd.concat([Z, y.rename("y")], axis=1).dropna()
+            Zfit, yfit = data[["etf","rate","fee"]], data["y"]
+            XtX = Zfit.T @ Zfit
+            w = np.linalg.solve(XtX + lam*np.eye(3), Zfit.T @ yfit)
+            w = pd.Series(w, index=["etf","rate","fee"]).clip(lower=0)
+            w = (1 - min_weight*3)*(w/w.sum()) + min_weight
+            w = w/w.sum()
+            mcis_raw = (Zfit @ w).rename("MCIS")
+            mcis_z = (mcis_raw - mcis_raw.mean())/mcis_raw.std(ddof=0)
+            return mcis_z, w, lags
+                '''.strip(),
+                language="python",
+            )
+        
+            # Downloads
+            if not _mcis.empty:
+                dl_df = _mcis.rename("MCIS_Z").to_frame()
+                dl_df["MONTH"] = dl_df.index.strftime("%Y-%m")
+                st.download_button(
+                    "Download MCIS (z-scored) CSV",
+                    data=dl_df[["MONTH","MCIS_Z"]].to_csv(index=False).encode("utf-8"),
+                    file_name="mcis_z.csv",
+                    mime="text/csv",
+                )
+            if not _weights.empty:
+                cfg = pd.DataFrame({
+                    "key": ["w_etf","w_rate","w_fee"] + [f"lag_{k}" for k in _lags.keys()],
+                    "value": list(_weights.values) + list(_lags.values())
+                })
+                st.download_button(
+                    "Download current lags & weights (CSV)",
+                    data=cfg.to_csv(index=False).encode("utf-8"),
+                    file_name="mcis_config.csv",
+                    mime="text/csv",
+                )
+
+
         # --- Chart A: MCIS vs Activity (both z-scored)
         st.markdown("")
         st.markdown("**Chart A. MCIS vs Activity (z-scored)**")
@@ -1017,6 +1174,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
