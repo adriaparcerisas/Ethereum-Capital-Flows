@@ -870,38 +870,6 @@ else:
         current = MCISz.dropna().iloc[-1]
         regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
 
-        # ---------- KPI CARDS ----------
-        pill_color = {"Tailwind": "#10B981", "Headwind": "#EF4444", "Neutral": "#64748B"}.get(regime, "#64748B")
-        metrics = [
-            {
-                "label": "MCIS (z-score, latest)",
-                "value": f"{current:,.2f}",
-                "pill": regime,
-                "pill_color": pill_color,
-            },
-            {
-                "label": "P(Activity ↑ next month | MCIS>0)",
-                "value": f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—",
-            },
-            {
-                "label": "Corr(MCIS, next-month ETH return)",
-                "value": f"{corr_price:,.2f}" if pd.notna(corr_price) else "—",
-            },
-            {
-                "label": "Weights (etf / rate / fee)",
-                "value": f"<span style='font-size:0.9em; color:#374151;'>"
-                         + " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
-                         + "</span>",
-                "delta": None,
-                "unsafe_allow_html": True,  # tell your renderer it's HTML
-            },
-
-        ]
-        draw_metrics_row(metrics, cols=4)
-
-        if len(data) < 6:
-            st.caption("⚠️ Very few months of history, results fragile!")
-
         # -------------------------------------------
         # MCIS — "How it's calculated" (expander)
         # -------------------------------------------
@@ -1058,6 +1026,37 @@ else:
                     mime="text/csv",
                 )
 
+        # ---------- KPI CARDS ----------
+        pill_color = {"Tailwind": "#10B981", "Headwind": "#EF4444", "Neutral": "#64748B"}.get(regime, "#64748B")
+        metrics = [
+            {
+                "label": "MCIS (z-score, latest)",
+                "value": f"{current:,.2f}",
+                "pill": regime,
+                "pill_color": pill_color,
+            },
+            {
+                "label": "P(Activity ↑ next month | MCIS>0)",
+                "value": f"{hit_rate*100:,.0f}%" if pd.notna(hit_rate) else "—",
+            },
+            {
+                "label": "Corr(MCIS, next-month ETH return)",
+                "value": f"{corr_price:,.2f}" if pd.notna(corr_price) else "—",
+            },
+            {
+                "label": "Weights (etf / rate / fee)",
+                "value": f"<span style='font-size:0.8em; color:#374151;'>"
+                         + " + ".join([f"{k} {v*100:,.0f}%" for k, v in weights.items()])
+                         + "</span>",
+                "delta": None,
+                "unsafe_allow_html": True,  # tell your renderer it's HTML
+            },
+
+        ]
+        draw_metrics_row(metrics, cols=4)
+
+        if len(data) < 6:
+            st.caption("⚠️ Very few months of history, results fragile!")
 
         # --- Chart A: MCIS vs Activity (both z-scored)
         st.markdown("")
@@ -1174,6 +1173,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
