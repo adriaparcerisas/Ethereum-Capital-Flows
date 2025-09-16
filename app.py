@@ -854,7 +854,7 @@ else:
             weights = (1 - MIN_W * n) * weights + MIN_W
             # (Numerically) re-normalize to be safe
             weights = weights / weights.sum()
-        # else: if the floor would exceed 100% in total (not our case), keep the normalized weights as-is
+        # else: if the floor would exceed 100% in total (not this case), keep the normalized weights as-is
 
 
         MCIS = (Z @ weights).rename("MCIS")
@@ -868,7 +868,7 @@ else:
         hit_rate = float((dy_next[MCISz > 0] > 0).mean()) if (MCISz > 0).any() else np.nan
         corr_price = float(MCISz.corr(ret_next))
         current = MCISz.dropna().iloc[-1]
-        regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
+        regime = "Tailwind" if current > 0.75 else ("Headwind" if current < -0.75 else "Neutral")
 
         # -------------------------------------------
         # MCIS — "How it's calculated" (expander)
@@ -1095,7 +1095,7 @@ else:
 
         
         
-        # --- Chart C: Regimes on ETH price
+        # --- Chart B: Regimes on ETH price
         if len(MCISz) >= 3:
             st.markdown("")
             st.markdown("**Chart B. ETH Price with MCIS Regimes**")
@@ -1173,6 +1173,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
