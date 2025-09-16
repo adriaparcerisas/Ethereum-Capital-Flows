@@ -808,16 +808,16 @@ else:
     rate_raw = rate_raw.clip(0, 1)
 
     # --- piecewise macro signal for rates (neutral band)
-    #    <0.40 -> negative, 0.40–0.60 -> 0 (neutral), >0.60 -> positive
+    #    <0.45 -> negative, 0.45–0.65 -> 0 (neutral), >0.65 -> positive
     def rate_signal(prob: pd.Series) -> pd.Series:
         s = pd.Series(0.0, index=prob.index, dtype="float64")
-        # below 0.40: scale linearly from -1 at 0.0 to 0 at 0.40
-        mask_low = prob < 0.40
-        s.loc[mask_low] = - (0.40 - prob.loc[mask_low]) / 0.40
-        # above 0.60: scale linearly from 0 at 0.60 to +1 at 1.0
-        mask_high = prob > 0.60
-        s.loc[mask_high] = (prob.loc[mask_high] - 0.60) / 0.40
-        # in [0.40, 0.60] stays 0 (neutral)
+        # below 0.45: scale linearly from -1 at 0.0 to 0 at 0.45
+        mask_low = prob < 0.45
+        s.loc[mask_low] = - (0.45 - prob.loc[mask_low]) / 0.45
+        # above 0.65: scale linearly from 0 at 0.65 to +1 at 1.0
+        mask_high = prob > 0.65
+        s.loc[mask_high] = (prob.loc[mask_high] - 0.65) / 0.45
+        # in [0.45, 0.65] stays 0 (neutral)
         return s
 
     rate_sig = rate_signal(rate_raw)
@@ -1189,6 +1189,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
