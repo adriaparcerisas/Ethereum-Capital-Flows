@@ -794,35 +794,58 @@ else:
     #        df = df.iloc[:-1]
 
     # --- numeric coercion
-    y = pd.to_numeric(df["ACTIVITY_INDEX_ZSCORE"], errors="coerce")
+    y = pd.to_numeric(df["ACTIVITY_INDEX"], errors="coerce")
     price = pd.to_numeric(df["AVG_ETH_PRICE_USD"], errors="coerce")
-    Xraw = pd.DataFrame({
-        "etf":  pd.to_numeric(df["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce"),
-        "rate": pd.to_numeric(df["RATES_PROB"], errors="coerce"),   # probability of cuts (0-1 or 0-100)
-        "fee":  pd.to_numeric(df["AVG_TX_FEE_USD"], errors="coerce"),
-    }, index=df.index)
+
+    # raw drivers
+    etf_raw  = pd.to_numeric(df["ETF_NET_FLOW_USD_MILLIONS"], errors="coerce")
+    rate_raw = pd.to_numeric(df["RATES_PROB"], errors="coerce")  # may be 0–1 or 0–100
+    fee_raw  = pd.to_numeric(df["AVG_TX_FEE_USD"], errors="coerce")
 
     # normalize rate probability to 0..1 if it comes as percent
-    if Xraw["rate"].dropna().max() > 1.00001:
-        Xraw["rate"] = Xraw["rate"] / 100.0
+    if rate_raw.dropna().max() > 1.00001:
+        rate_raw = rate_raw / 100.0
+    rate_raw = rate_raw.clip(0, 1)
 
-    # --- to choose lags (0..2) that maximize |corr| with activity
+    # --- piecewise macro signal for rates (neutral band)
+    #    <0.40 -> negative, 0.40–0.60 -> 0 (neutral), >0.60 -> positive
+    def rate_signal(prob: pd.Series) -> pd.Series:
+        s = pd.Series(0.0, index=prob.index, dtype="float64")
+        # below 0.40: scale linearly from -1 at 0.0 to 0 at 0.40
+        mask_low = prob < 0.40
+        s.loc[mask_low] = - (0.40 - prob.loc[mask_low]) / 0.40
+        # above 0.60: scale linearly from 0 at 0.60 to +1 at 1.0
+        mask_high = prob > 0.60
+        s.loc[mask_high] = (prob.loc[mask_high] - 0.60) / 0.40
+        # in [0.40, 0.60] stays 0 (neutral)
+        return s
+
+    rate_sig = rate_signal(rate_raw)
+
+    # bundle into a frame for lag selection
+    Xraw = pd.DataFrame(
+        {"etf": etf_raw, "rate": rate_sig, "fee": fee_raw},
+        index=df.index
+    )
+
+    # --- choose lags (0..2) that maximize |corr| with activity
+    #     fee is expected inverse (sign = -1), etf & rate expected positive
     lags = {}
     for col, sign in [("etf", +1), ("rate", +1), ("fee", -1)]:
         best_lag, best_score = 0, -np.inf
         for L in (0, 1, 2):
-            corr = pd.concat([y, Xraw[col].shift(L)], axis=1).corr().iloc[0, 1]
-            if pd.notna(corr):
-                score = abs(corr * sign)
+            c = pd.concat([y, Xraw[col].shift(L)], axis=1).corr().iloc[0, 1]
+            if pd.notna(c):
+                score = abs(c * sign)
                 if score > best_score:
                     best_score, best_lag = score, L
         lags[col] = best_lag
 
-    # --- lag and flip fees so "higher is better" for all features
+    # --- apply chosen lags and flip fees so "higher is better" for all features
     Xlag = pd.DataFrame({c: Xraw[c].shift(lags[c]) for c in Xraw.columns}, index=df.index)
     Xlag["fee"] = -Xlag["fee"]
 
-    # --- standardize (z-scores) and align
+    # --- standardize (z-scores), align with y
     Z = (Xlag - Xlag.mean()) / Xlag.std(ddof=0)
     data = pd.concat([Z, y.rename("y")], axis=1).dropna()
 
@@ -832,29 +855,22 @@ else:
         Z = data[["etf", "rate", "fee"]]
         y_aligned = data["y"]
 
-        # --- ridge weights (λ=1) with non-negativity clamp + renormalize
+        # --- ridge weights (λ=1) with non-negativity clamp + 5% floor
         XtX = Z.T @ Z
         lam = 1.0
         w = np.linalg.solve(XtX + lam * np.eye(3), Z.T @ y_aligned)
 
-        # Turn into a non-negative Series
         weights = pd.Series(w, index=["etf", "rate", "fee"]).clip(lower=0)
-        
-        # If everything is ~0, fall back to equal weights
         if weights.sum() <= 1e-12 or (weights <= 1e-12).all():
             weights = pd.Series([1/3, 1/3, 1/3], index=["etf", "rate", "fee"])
         else:
             weights = weights / weights.sum()
-        
-        # --- Apply a per-factor floor and renormalize
-        MIN_W = 0.05  # 5% floor per factor
+
+        MIN_W = 0.05
         n = len(weights)
         if MIN_W * n < 1.0:
-            # Scale the original weights into the remaining (1 - n*MIN_W) mass, then add the floor
             weights = (1 - MIN_W * n) * weights + MIN_W
-            # (Numerically) re-normalize to be safe
             weights = weights / weights.sum()
-        # else: if the floor would exceed 100% in total (not this case), keep the normalized weights as-is
 
 
         MCIS = (Z @ weights).rename("MCIS")
@@ -1173,6 +1189,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
