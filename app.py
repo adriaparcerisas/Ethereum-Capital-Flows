@@ -868,7 +868,7 @@ else:
         hit_rate = float((dy_next[MCISz > 0] > 0).mean()) if (MCISz > 0).any() else np.nan
         corr_price = float(MCISz.corr(ret_next))
         current = MCISz.dropna().iloc[-1]
-        regime = "Tailwind" if current > 0.85 else ("Headwind" if current < -0.85 else "Neutral")
+        regime = "Tailwind" if current > 0.5 else ("Headwind" if current < -0.5 else "Neutral")
 
         # -------------------------------------------
         # MCIS — "How it's calculated" (expander)
@@ -1173,6 +1173,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
