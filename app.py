@@ -1153,8 +1153,6 @@ st.markdown("""
 - The Macro-Chain Impulse Score (MCIS) is currently in **tailwind regime**, 
   suggesting that macro conditions remain supportive, although limited history 
   makes results fragile.
-- Panel discussion should focus on whether this demand is durable, and how much 
-  capital concentration vs broad adoption is taking place.
 """)
 
 
@@ -1189,6 +1187,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
