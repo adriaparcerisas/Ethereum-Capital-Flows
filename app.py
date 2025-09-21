@@ -595,6 +595,221 @@ draw_section(
     "and shifting interest-rate expectations can explain the rise, and how these factors may spill over to ETH price."
 )
 
+# -------------------------------------------
+# Activity Index — "How it's calculated" (expander)
+# -------------------------------------------
+with st.expander("🧪 How the Activity Index is calculated (data, formula, SQL)"):
+    st.markdown("**What is it (intuition → math)**")
+    st.write(
+        "A composite of **breadth** (unique users), **intensity** (transactions), and **value** "
+        "(DeFi USD volume). Each component is z-scored over the sample window and combined with "
+        "fixed weights to form a single monthly index."
+    )
+    st.latex(r"""
+    \text{AI}_t \;=\; 0.25 \cdot z\!\left(\text{TotalTx}_t\right) \;+\;
+                       0.35 \cdot z\!\left(\text{UniqueUsers}_t\right) \;+\;
+                       0.40 \cdot z\!\left(\text{DeFiVolumeUSD}_t\right)
+    """)
+    st.caption(
+        "z(·) is the standard score computed over the chosen history (2023-01 to 2025-08 in our export). "
+        "DeFiVolumeUSD combines DEX notional (EZ_DEX_SWAPS.amount_in_usd) plus lending flows "
+        "(deposits + borrows in EZ_LENDING_*). ETH price is **joined for context** but **not used** in the index."
+    )
+
+    # ---- Provenance & preprocessing bullets
+    st.markdown(
+        "- **Source (Flipside):** core transactions, DEX swaps, lending deposits & borrows, transfers, hourly prices.\n"
+        "- **Aggregation:** Monthly (calendar) from 2023-01 to 2025-08 (last available month).\n"
+        "- **Filters:** Obvious outliers filtered with value bounds in DeFi tables; NULLs coerced to 0 before monthly sums.\n"
+        "- **Why these weights (0.25 / 0.35 / 0.40):** Slightly favor **users** and **economic value** over raw tx count to "
+          "avoid over-rewarding spammy micro-tx bursts."
+    )
+
+    # ---- Show the exact Flipside SQL used to build the CSV
+    st.markdown("**Exact Flipside SQL (used to produce the CSV you loaded):**")
+    st.code(
+        """
+-- Improved Ethereum Activity Index with Z-Score Normalization
+
+WITH eth_prices AS (
+  SELECT 
+    DATE_TRUNC('month', hour) AS month,
+    AVG(price) AS avg_eth_price_usd
+  FROM ETHEREUM.PRICE.EZ_PRICES_HOURLY
+  WHERE symbol = 'ETH' 
+    AND hour >= '2023-01-01' 
+    AND hour < '2025-09-01'
+    AND price BETWEEN 100 AND 10000
+  GROUP BY 1
+),
+
+-- Base activity metrics from transactions
+base_activity AS (
+  SELECT 
+    DATE_TRUNC('month', block_timestamp) AS month,
+    COUNT(*) AS total_transactions,
+    COUNT(DISTINCT from_address) AS unique_users,
+    SUM(COALESCE(value, 0)) AS native_eth_volume,
+    COUNT(CASE WHEN tx_succeeded = TRUE THEN 1 END) AS successful_transactions
+  FROM ETHEREUM.CORE.FACT_TRANSACTIONS
+  WHERE block_timestamp >= '2023-01-01' 
+    AND block_timestamp < '2025-09-01'
+  GROUP BY 1
+),
+
+-- DeFi volumes for economic activity
+defi_volumes AS (
+  SELECT 
+    DATE_TRUNC('month', block_timestamp) AS month,
+    SUM(COALESCE(amount_in_usd, 0)) AS dex_volume_usd,
+    COUNT(DISTINCT origin_from_address) AS dex_users
+  FROM ETHEREUM.DEFI.EZ_DEX_SWAPS
+  WHERE block_timestamp >= '2023-01-01' 
+    AND block_timestamp < '2025-09-01'
+    AND amount_in_usd BETWEEN 0.1 AND 1e9 
+    AND amount_in_usd IS NOT NULL
+  GROUP BY 1
+),
+
+lending_volumes AS (
+  -- Combine lending deposits and borrows
+  SELECT 
+    month,
+    SUM(lending_volume) AS total_lending_volume,
+    COUNT(DISTINCT user_address) AS lending_users
+  FROM (
+    SELECT 
+      DATE_TRUNC('month', block_timestamp) AS month,
+      SUM(COALESCE(amount_usd, 0)) AS lending_volume,
+      origin_from_address AS user_address
+    FROM ETHEREUM.DEFI.EZ_LENDING_DEPOSITS
+    WHERE block_timestamp >= '2023-01-01' 
+      AND block_timestamp < '2025-09-01'
+      AND amount_usd BETWEEN 0.1 AND 1e9 
+      AND amount_usd IS NOT NULL
+    GROUP BY 1, 3
+    
+    UNION ALL
+    
+    SELECT 
+      DATE_TRUNC('month', block_timestamp) AS month,
+      SUM(COALESCE(amount_usd, 0)) AS lending_volume,
+      origin_from_address AS user_address
+    FROM ETHEREUM.DEFI.EZ_LENDING_BORROWS
+    WHERE block_timestamp >= '2023-01-01' 
+      AND block_timestamp < '2025-09-01'
+      AND amount_usd BETWEEN 0.1 AND 1e9 
+      AND amount_usd IS NOT NULL
+    GROUP BY 1, 3
+  )
+  GROUP BY 1
+),
+
+-- Combine all metrics
+combined_metrics AS (
+  SELECT 
+    ba.month,
+    ba.total_transactions,
+    ba.unique_users,
+    ba.successful_transactions,
+    ba.native_eth_volume,
+    COALESCE(dv.dex_volume_usd, 0) AS dex_volume_usd,
+    COALESCE(dv.dex_users, 0) AS dex_users,
+    COALESCE(lv.total_lending_volume, 0) AS lending_volume_usd,
+    COALESCE(lv.lending_users, 0) AS lending_users,
+    -- Total economic activity (native + DeFi)
+    COALESCE(dv.dex_volume_usd, 0) + COALESCE(lv.total_lending_volume, 0) AS total_defi_volume_usd
+  FROM base_activity ba
+  LEFT JOIN defi_volumes dv ON ba.month = dv.month
+  LEFT JOIN lending_volumes lv ON ba.month = lv.month
+),
+
+-- Calculate statistics for z-score normalization
+stats AS (
+  SELECT
+    AVG(total_transactions) AS avg_txns,
+    STDDEV(total_transactions) AS std_txns,
+    AVG(unique_users) AS avg_users,
+    STDDEV(unique_users) AS std_users,
+    AVG(total_defi_volume_usd) AS avg_volume,
+    STDDEV(total_defi_volume_usd) AS std_volume
+  FROM combined_metrics
+  WHERE total_transactions > 0
+)
+
+-- Final output
+SELECT 
+  p.month,
+  p.avg_eth_price_usd,
+  cm.total_transactions,
+  cm.successful_transactions,
+  cm.unique_users,
+  cm.dex_volume_usd / 1e9 AS dex_volume_billions,
+  cm.lending_volume_usd / 1e9 AS lending_volume_billions,
+  cm.total_defi_volume_usd / 1e9 AS total_defi_volume_billions,
+  
+  -- Component z-scores
+  (cm.total_transactions - s.avg_txns) / NULLIF(s.std_txns, 0) AS txn_zscore,
+  (cm.unique_users - s.avg_users) / NULLIF(s.std_users, 0) AS user_zscore,
+  (cm.total_defi_volume_usd - s.avg_volume) / NULLIF(s.std_volume, 0) AS volume_zscore,
+  
+  -- Composite Activity Index (weights 0.25 / 0.35 / 0.40)
+  (0.25 * (cm.total_transactions - s.avg_txns) / NULLIF(s.std_txns, 0) + 
+   0.35 * (cm.unique_users - s.avg_users) / NULLIF(s.std_users, 0) + 
+   0.40 * (cm.total_defi_volume_usd - s.avg_volume) / NULLIF(s.std_volume, 0)) AS activity_index
+
+FROM eth_prices p
+JOIN combined_metrics cm ON p.month = cm.month
+CROSS JOIN stats s
+ORDER BY p.month;
+        """.strip(),
+        language="sql",
+    )
+
+    st.markdown("**Recompute locally (if needed) from a joined panel**")
+    st.code(
+        '''
+import pandas as pd
+def compute_activity_index(df, tx_col="total_transactions",
+                           user_col="unique_users",
+                           vol_col="total_defi_volume_usd",
+                           weights=(0.25, 0.35, 0.40)):
+    """
+    Expects monthly rows with total tx, unique users, and DeFi USD volume.
+    Returns a new Series 'activity_index' with z-scored components and fixed weights.
+    """
+    d = df.copy()
+    # z-scores
+    for c in (tx_col, user_col, vol_col):
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    z_tx   = (d[tx_col]  - d[tx_col].mean())  / d[tx_col].std(ddof=0)
+    z_user = (d[user_col]- d[user_col].mean())/ d[user_col].std(ddof=0)
+    z_vol  = (d[vol_col] - d[vol_col].mean()) / d[vol_col].std(ddof=0)
+    w_tx, w_user, w_vol = weights
+    return (w_tx * z_tx + w_user * z_user + w_vol * z_vol).rename("activity_index")
+        '''.strip(),
+        language="python",
+    )
+
+    # ---- Show the latest row’s components if available
+    has_cols = {"MONTH","total_transactions","unique_users","total_defi_volume_usd"}.issubset(
+        set(panel.columns)
+    )
+    if has_cols:
+        _tmp = panel[["MONTH","total_transactions","unique_users","total_defi_volume_usd"]].dropna().copy()
+        _tmp["MONTH_DT"] = pd.to_datetime(_tmp["MONTH"], errors="coerce")
+        _tmp = _tmp.sort_values("MONTH_DT")
+        if not _tmp.empty:
+            last = _tmp.tail(1).squeeze()
+            st.markdown("**Latest input snapshot:**")
+            st.write({
+                "Month": str(last["MONTH"])[:7],
+                "Total Transactions": f"{float(last['total_transactions']):,.0f}",
+                "Unique Users": f"{float(last['unique_users']):,.0f}",
+                "DeFi Volume (USD)": f"${float(last['total_defi_volume_usd']):,.0f}",
+            })
+
+
 
 # KPIs
 c1, c2, c3, c4 = st.columns(4)
@@ -1187,6 +1402,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
