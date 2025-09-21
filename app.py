@@ -602,18 +602,18 @@ with st.expander("🧪 How the Activity Index is calculated (data, formula, SQL)
     st.markdown("**What is it (intuition → math)**")
     st.write(
         "A composite of **breadth** (unique users), **intensity** (transactions), and **value** "
-        "(DeFi USD volume). Each component is z-scored over the sample window and combined with "
+        "(Onchain USD volume). Each component is z-scored over the sample window and combined with "
         "fixed weights to form a single monthly index."
     )
     st.latex(r"""
     \text{AI}_t \;=\; 0.25 \cdot z\!\left(\text{TotalTx}_t\right) \;+\;
                        0.35 \cdot z\!\left(\text{UniqueUsers}_t\right) \;+\;
-                       0.40 \cdot z\!\left(\text{DeFiVolumeUSD}_t\right)
+                       0.40 \cdot z\!\left(\text{OnchainVolumeUSD}_t\right)
     """)
     st.caption(
-        "z(·) is the standard score computed over the chosen history (2023-01 to 2025-08 in our export). "
-        "DeFiVolumeUSD combines DEX notional (EZ_DEX_SWAPS.amount_in_usd) plus lending flows "
-        "(deposits + borrows in EZ_LENDING_*). ETH price is **joined for context** but **not used** in the index."
+        "z(·) is the standard score computed over the chosen history (2023-01 to 2025-08 in the export). "
+        "OnchainVolumeUSD combines DEX notional (EZ_DEX_SWAPS.amount_in_usd) plus lending flows "
+        "(deposits + borrows in EZ_LENDING_*) and transfers. ETH price is **joined for context** but **not used** in the index."
     )
 
     # ---- Provenance & preprocessing bullets
@@ -1402,6 +1402,7 @@ st.markdown(
 # -----------------------------------------------------------
 st.markdown('<div class="sep"></div>', unsafe_allow_html=True)
 st.caption("Built by Adrià Parcerisas • Data via Flipside exports • Code quality and metric selection optimized for panel discussion.")
+
 
 
 
